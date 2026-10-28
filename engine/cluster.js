@@ -12,17 +12,21 @@ export async function resolveIp(host, { fetchFn = fetch } = {}) {
 }
 
 const asnCache = new Map()
+const store = typeof document !== 'undefined' ? globalThis.localStorage : null // browser: remember ip -> asn across runs, since RIPEstat is slow and rate-limited
 export async function asnOf(ip, { fetchFn = fetch } = {}) {
   if (asnCache.has(ip)) return asnCache.get(ip)
+  try { const hit = store?.getItem(`asn:${ip}`); if (hit) { const v = JSON.parse(hit); asnCache.set(ip, Promise.resolve(v)); return v } } catch {}
   const p = (async () => {
-    const r = await fetchFn(`https://stat.ripe.net/data/network-info/data.json?resource=${ip}`, { signal: AbortSignal.timeout(8000) })
+    const r = await fetchFn(`https://stat.ripe.net/data/network-info/data.json?resource=${ip}`, { signal: AbortSignal.timeout(15000) })
     const j = await r.json()
     const asn = Number(j.data?.asns?.[0]) || null
     let holder = asn && CDN_ASNS.get(asn)
     if (asn && !holder) {
-      holder = await fetchFn(`https://stat.ripe.net/data/as-overview/data.json?resource=AS${asn}`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).then((j) => j.data?.holder).catch(() => null)
+      holder = await fetchFn(`https://stat.ripe.net/data/as-overview/data.json?resource=AS${asn}`, { signal: AbortSignal.timeout(15000) }).then((r) => r.json()).then((j) => j.data?.holder).catch(() => null)
     }
-    return { asn, prefix: j.data?.prefix ?? null, holder: holder ?? null, cdn: CDN_ASNS.has(asn) }
+    const v = { asn, prefix: j.data?.prefix ?? null, holder: holder ?? null, cdn: CDN_ASNS.has(asn) }
+    if (asn) try { store?.setItem(`asn:${ip}`, JSON.stringify(v)) } catch {}
+    return v
   })().catch(() => ({ asn: null, prefix: null, holder: null, cdn: false }))
   asnCache.set(ip, p)
   return p

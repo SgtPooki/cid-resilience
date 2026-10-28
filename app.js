@@ -50,7 +50,7 @@ function row(p, obs) {
   const km = obs.filter((o) => o.status === 'local' && o.vantage?.lat != null).map((o) => `${fmt(radiusKm(o.baseline))}`).join(' / ')
   const seen = obs.map((o) => `<span class="${st(o.status)}">${esc(o.vantage?.label ?? '?')}: ${st(o.status)}${o.weak ? ' (weak timing)' : ''}${o.error ? ` (${esc(o.error)})` : ''}</span>`).join('<br>')
   const cell = ob.status === 'testing' ? `testing${p.progress ? ` ${p.progress[0]}/${p.progress[1]}` : ''}` : st(ob.status)
-  return `<tr><td class="${st(ob.status)}">${cell}</td><td>${where}<br><small>${(p.peers ?? []).length} peer id${p.peers?.length === 1 ? '' : 's'}</small></td><td>${op}</td><td class="n">${fmt(ob.baseline)}</td><td class="n">${fmt(ob.excess)}</td><td class="n">${ob.verified != null ? `${fmt(ob.verified)}/${fmt(ob.rounds)}` : ''}</td><td class="n">${km}</td><td>${seen}</td></tr>`
+  return `<tr><td class="${st(ob.status)}">${cell}</td><td>${where}<br><small>${p.peerCount ?? (p.peers ?? []).length} peer id${(p.peerCount ?? p.peers?.length) === 1 ? '' : 's'}</small></td><td>${op}</td><td class="n">${fmt(ob.baseline)}</td><td class="n">${fmt(ob.excess)}</td><td class="n">${ob.verified != null ? `${fmt(ob.verified)}/${fmt(ob.rounds)}` : ''}</td><td class="n">${km}</td><td>${seen}</td></tr>`
 }
 
 function renderMerged() {

@@ -16,12 +16,13 @@ export function sanitize(r) {
     providers: (Array.isArray(r.providers) ? r.providers : []).map((p) => ({
       url: typeof p.url === 'string' && /^https?:\/\/[\w.-]+(:\d+)?$/.test(p.url) ? p.url : null,
       peers: (Array.isArray(p.peers) ? p.peers : []).filter((x) => typeof x === 'string' && /^[A-Za-z0-9]+$/.test(x)).slice(0, 20),
+      peerCount: num(p.peerCount) ?? (Array.isArray(p.peers) ? p.peers.length : 0),
       ip: typeof p.ip === 'string' && /^[\d.:a-f]+$/i.test(p.ip) ? p.ip : null,
       asn: num(p.asn), holder: p.holder == null ? null : String(p.holder).slice(0, 60), cdn: !!p.cdn,
       status: STATUSES.has(p.status) ? p.status : 'advertised',
       baseline: num(p.baseline), probe: num(p.probe), excess: num(p.excess), transfer: num(p.transfer), verified: num(p.verified), rounds: num(p.rounds),
       error: p.error == null ? null : String(p.error).slice(0, 80), warmed: !!p.warmed, weak: !!p.weak, transport: p.transport === 'bitswap' ? 'bitswap' : undefined,
-    })).filter((p) => p.url || p.peers.length),
+    })).filter((p) => p.url || p.peers.length || p.peerCount),
   }
 }
 
@@ -35,9 +36,10 @@ export function merge(reports) {
     vantages.push(r.vantage)
     for (const p of r.providers) {
       // Same URL with a different IP (geo-DNS, anycast) is a different box, so it gets its own row.
-      const key = (p.url ?? `peer:${p.peers?.[0]}`) + (p.ip ? `@${p.ip}` : '')
-      const m = providers.get(key) ?? providers.set(key, { key, url: p.url, peers: [], ip: p.ip, asn: p.asn, holder: p.holder, cdn: !!p.cdn, obs: [] }).get(key)
+      const key = (p.url ?? `peer:${p.peers?.[0] ?? 'bitswap'}`) + (p.ip ? `@${p.ip}` : '')
+      const m = providers.get(key) ?? providers.set(key, { key, url: p.url, peers: [], peerCount: 0, ip: p.ip, asn: p.asn, holder: p.holder, cdn: !!p.cdn, obs: [] }).get(key)
       for (const id of p.peers ?? []) if (!m.peers.includes(id)) m.peers.push(id)
+      m.peerCount = Math.max(m.peerCount, m.peers.length, p.peerCount ?? 0)
       m.ip ??= p.ip; m.asn ??= p.asn; m.holder ??= p.holder; m.cdn ||= !!p.cdn
       m.obs.push({ vantageId: r.vantage.id, vantage: r.vantage, status: p.status, baseline: p.baseline, probe: p.probe, excess: p.excess, transfer: p.transfer, verified: p.verified, rounds: p.rounds, error: p.error, warmed: p.warmed, weak: p.weak })
     }
@@ -53,8 +55,20 @@ async function pipe(bytes, stream) {
   return new Uint8Array(await new Response(r).arrayBuffer())
 }
 
+// Share links carry a compact form: no peer IDs (just the count), no probe/transfer (excess is what matters),
+// baseline rounded up to whole ms (never shrinks a disk), nulls and falses dropped. Untested rows are dropped too.
+export function compact(reports) {
+  return reports.map((r) => ({
+    ...r,
+    providers: (Array.isArray(r?.providers) ? r.providers : []).filter((p) => !['untested', 'advertised'].includes(p.status)).map(({ peers, probe, transfer, ...p }) => {
+      const out = { ...p, peerCount: p.peerCount ?? peers?.length ?? 0, baseline: p.baseline == null ? null : Math.ceil(p.baseline), excess: p.excess == null ? null : Math.round(p.excess) }
+      return Object.fromEntries(Object.entries(out).filter(([, v]) => v != null && v !== false))
+    }),
+  }))
+}
+
 export async function encodeReports(reports) {
-  const json = new TextEncoder().encode(JSON.stringify(reports))
+  const json = new TextEncoder().encode(JSON.stringify(compact(reports)))
   return b64url(await pipe(json, new CompressionStream('deflate-raw')))
 }
 

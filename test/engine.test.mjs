@@ -184,6 +184,11 @@ test('merge + fragment round trip', async () => {
   const back = await decodeReports(frag)
   assert.equal(back.length, 2)
   assert.equal(back[0].providers[0].url, 'https://x'); assert.equal(back[0].providers[0].baseline, 10); assert.equal(back[1].vantage.label, 'lon')
+  assert.deepEqual(back[0].providers[0].peers, []); assert.equal(back[0].providers[0].peerCount, 1) // compact form carries the count, not the IDs
+  assert.equal(merge(back).providers[0].peerCount, 1)
+  const r4 = { ...r1, providers: [{ ...r1.providers[0], baseline: 10.2, excess: 0.4, probe: 10.6, transfer: 3 }, { url: 'https://u', peers: [], status: 'untested' }] }
+  const [c] = await decodeReports(await encodeReports([r4]))
+  assert.equal(c.providers.length, 1); assert.equal(c.providers[0].baseline, 11); assert.equal(c.providers[0].probe, null) // baseline rounds up, extras dropped, untested dropped
   // untrusted input: bad url scheme, unknown status and html in labels are dropped or neutralised
   const evil = { ...r1, vantage: { ...r1.vantage, label: '<img src=x onerror=1>' }, providers: [{ url: 'javascript:alert(1)', peers: ['P'], status: 'pwned', baseline: 'NaN' }] }
   const [san] = await decodeReports(await encodeReports([evil]))
