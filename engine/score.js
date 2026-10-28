@@ -75,3 +75,12 @@ export function score(ipClusters, asnClusters, vantages) {
 // "N copies within X km of you": local providers whose disk radius from this vantage is <= km.
 export const withinKm = (providers, vantageId, km) =>
   providers.filter((p) => p.obs.some((o) => o.vantageId === vantageId && o.status === 'local' && radiusKm(o.baseline) <= km)).length
+
+// Headline grade from a score. Levels: none < single < unproven < proven.
+export function grade(s) {
+  if (!s.local) return { level: 'none', headline: s.servedValid ? 'No local copies observed: every provider that answered was slower than its own baseline' : 'No verified copies observed (unreachable providers may still hold one)' }
+  if (s.boxes <= 1) return { level: 'single', headline: 'Single point of failure: only one box (IP) observed with a local copy' }
+  if (s.locatedVantages < 2) return { level: 'unproven', headline: `${s.operators} network${s.operators === 1 ? '' : 's'} on ${s.boxes} boxes, separation unproven (needs a second located vantage)` }
+  if (s.provenSeparate < 2) return { level: 'unproven', headline: `${s.operators} network${s.operators === 1 ? '' : 's'} on ${s.boxes} boxes, but no two proven apart` }
+  return { level: 'proven', headline: `${s.provenSeparate} copies proven geographically apart${s.capped ? ' (at least)' : ''}` }
+}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { varint, base32, parseCar, parseCarChunk, sha256hex, concat, cidDigest } from '../engine/car.js'
 import { protocolsFromMetadata, httpUrl, endpoints } from '../engine/discover.js'
 import { challenge, median, fetchBlocks, pick } from '../engine/probe.js'
-import { haversineKm, disjoint, separated, maxSeparatedSet, score, radiusKm, inconsistencies, KM_PER_MS, LOCATION_SLACK_KM } from '../engine/score.js'
+import { haversineKm, disjoint, separated, maxSeparatedSet, score, radiusKm, inconsistencies, KM_PER_MS, LOCATION_SLACK_KM, grade } from '../engine/score.js'
 import { merge, encodeReports, decodeReports } from '../engine/report.js'
 import { wantBlockMessage, parseResponse } from '../engine/bitswap.js'
 
@@ -205,4 +205,13 @@ test('bitswap response parsing: payload blocks and DontHave presences', () => {
   assert.deepEqual([...r.dontHave[0]], [...cid])
   assert.deepEqual([...parseResponse(Uint8Array.of(0x12, 2, 7, 8)).blocks[0]], [7, 8]) // bitswap 1.0 raw block
   assert.throws(() => parseResponse(Uint8Array.of(0x1a, 50, 1)), /truncated/)
+})
+
+test('grade levels', () => {
+  const base = { servedValid: 0, local: 0, boxes: 0, operators: 0, locatedVantages: 1, provenSeparate: 0, capped: false }
+  assert.equal(grade(base).level, 'none')
+  assert.equal(grade({ ...base, servedValid: 2, local: 2, boxes: 1, operators: 1 }).level, 'single')
+  assert.equal(grade({ ...base, servedValid: 3, local: 3, boxes: 3, operators: 2 }).level, 'unproven')
+  assert.equal(grade({ ...base, servedValid: 3, local: 3, boxes: 3, operators: 2, locatedVantages: 2, provenSeparate: 1 }).level, 'unproven')
+  assert.equal(grade({ ...base, servedValid: 3, local: 3, boxes: 3, operators: 2, locatedVantages: 2, provenSeparate: 2 }).level, 'proven')
 })

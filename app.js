@@ -1,12 +1,22 @@
-import { run, analyze, newVantage, withinKm, radiusKm, disksOf, inconsistencies, shareUrl, reportsFromUrl, sanitize } from './engine/index.js'
+import { run, analyze, newVantage, withinKm, radiusKm, disksOf, inconsistencies, shareUrl, reportsFromUrl, sanitize, grade } from './engine/index.js'
 
 const $ = (id) => document.getElementById(id)
 let reports = [], providers = new Map(), running = false
 const fmt = (n) => (n == null || !isFinite(n) ? '' : Math.round(n))
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
+// Location and label edits after a run update this browser's own vantage, so a late geolocation grant still lands in the report.
+function syncVantage() {
+  const mine = reports.find((r) => r.vantage.id === current?.id)
+  if (!mine) return
+  mine.vantage.lat = $('lat').value ? Number($('lat').value) : null
+  mine.vantage.lon = $('lon').value ? Number($('lon').value) : null
+  mine.vantage.label = $('label').value.trim() || 'me'
+  renderMerged()
+}
+for (const id of ['lat', 'lon', 'label']) $(id).onchange = syncVantage
 $('geo').onclick = () => navigator.geolocation.getCurrentPosition(
-  (p) => { $('lat').value = p.coords.latitude.toFixed(1); $('lon').value = p.coords.longitude.toFixed(1) },
+  (p) => { $('lat').value = p.coords.latitude.toFixed(1); $('lon').value = p.coords.longitude.toFixed(1); syncVantage() },
   (e) => { $('status').textContent = `location denied: ${e.message}` }, { timeout: 10000 })
 
 function renderLive() {
@@ -17,8 +27,9 @@ function renderLive() {
 const STATUS = new Set(['advertised', 'local', 'on-demand', 'invalid', 'unreachable'])
 const st = (s) => (STATUS.has(s) ? s : 'advertised')
 const safeHttp = (u) => (typeof u === 'string' && /^https?:\/\/[\w.-]+(:\d+)?$/.test(u) ? u : null)
+const BEST = ['local', 'on-demand', 'invalid', 'unreachable', 'advertised']
 function row(p, obs) {
-  const ob = obs[0]
+  const ob = obs.toSorted((a, b) => BEST.indexOf(st(a.status)) - BEST.indexOf(st(b.status)))[0] // best observation across vantages; per-vantage detail is in the last column
   const url = safeHttp(p.url)
   const where = url ? `<a href="${esc(url)}/ipfs/bafkqaaa" class="mono">${esc(url)}</a>` : `<span class="mono">${esc(p.peers?.[0])}</span> <span class="tag">bitswap</span>`
   const op = [esc(p.ip), p.holder ? esc(`AS${p.asn} ${p.holder}`) : p.asn ? esc(`AS${p.asn}`) : ''].filter(Boolean).join('<br>') + (p.cdn ? ' <span class="tag">cdn</span>' : '') + (obs.some((o) => o.warmed) ? ' <span class="tag" title="served the sample CAR first, so its cache was warm before the challenge">warmed</span>' : '')
@@ -30,23 +41,27 @@ function row(p, obs) {
 function renderMerged() {
   const { merged, score, boxes } = analyze(reports)
   const s = score
+  const g = grade(s)
+  $('grade').textContent = g.headline; $('grade').className = `grade ${g.level}`
   const sepIds = new Set(s.separateKeys)
   $('cards').innerHTML = [
     ['advertised', s.advertised, 'IPNI + delegated routing records, deduped by endpoint'],
     ['served valid', s.servedValid, 'answered a random block that hashed correctly'],
-    ['local copy', s.local, 'valid and under the latency threshold'],
-    ['on demand', s.onDemand, 'valid but slow: fetched from elsewhere'],
-    ['boxes', s.boxes, 'distinct IPs with a local copy (CDN edges excluded)'],
-    ['operators', s.operators, 'distinct ASNs with a local copy'],
-    ['proven apart', s.provenSeparate, s.locatedVantages >= 2 ? 'largest set of boxes with non-overlapping RTT disks' : 'needs 2+ located vantages'],
+    ['local copy', s.local, 'valid and not measurably slower than the no-op baseline, from any vantage (CDN edges included)'],
+    ['on demand', s.onDemand, 'valid but slower than the threshold from some vantage'],
+    ['boxes', s.boxes, 'distinct IPs with a local copy, CDN edges excluded'],
+    ['operators', s.operators, 'distinct networks (ASNs) with a local copy, CDN edges excluded'],
+    ['proven apart', s.provenSeparate, s.locatedVantages >= 2 ? 'largest set of boxes with non-overlapping RTT disks' : 'impossible from one vantage: needs a second located vantage'],
   ].map(([k, v, d]) => `<div class="card"><b>${v}</b>${k}<br><span>${d}</span></div>`).join('')
   const me = merged.vantages.find((v) => v.id === current?.id) ?? merged.vantages[0]
   $('near').innerHTML = me?.lat != null
     ? [500, 1000, 3000].map((km) => `<b>${withinKm(merged.providers, me.id, km)}</b> local copies within ${km} km of ${esc(me.label)}`).join(' · ')
     : 'Add a location to see "N copies within X km of you".'
-  $('sepnote').textContent = s.locatedVantages >= 2
-    ? `Resilience score: ${s.provenSeparate} independent failure domain${s.provenSeparate === 1 ? '' : 's'} proven apart (${s.operators} operators, ${s.boxes} boxes seen${s.capped ? '; only the first 20 boxes were searched, so this is a lower bound' : ''}). Vantage locations are self-reported.`
-    : `Resilience score needs reports from two located vantages. From one vantage every disk contains you, so nothing can be proven apart. Conservative count: ${s.operators} operators.`
+  const ts = merged.vantages.map((v) => Date.parse(v.ts)).filter(Boolean)
+  const when = ts.length ? ` Measured ${new Date(Math.min(...ts)).toISOString().slice(0, 16)}Z${ts.length > 1 ? ` to ${new Date(Math.max(...ts)).toISOString().slice(0, 16)}Z` : ''}; a report only says what was true then.` : ''
+  $('sepnote').textContent = (s.locatedVantages >= 2
+    ? `${s.provenSeparate} responder location${s.provenSeparate === 1 ? '' : 's'} proven geographically apart (${s.operators} networks, ${s.boxes} boxes seen${s.capped ? '; only the first 20 boxes were searched, so this is a lower bound' : ''}). Geographic separation only: it says nothing about shared ownership or software. Vantage locations are self-reported.`
+    : `From one vantage every distance disk contains you, so nothing can be proven apart. Next step: copy the share link below and open it from another city, then press Measure there. Conservative count meanwhile: ${s.operators} networks.`) + when
   $('rows').innerHTML = merged.providers
     .toSorted((a, b) => rank(a) - rank(b))
     .map((p) => row(p, p.obs).replace('<tr>', `<tr${boxes.find((c) => c.providers.includes(p) && sepIds.has(c.key)) ? ' style="outline:1px solid var(--ok)"' : ''}>`)).join('')

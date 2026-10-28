@@ -23,6 +23,7 @@
   textarea { width: 100%; min-height: 4rem; font-family: ui-monospace, monospace; font-size: .8rem }
   #share { width: 100%; font-family: ui-monospace, monospace; font-size: .8rem }
   details { margin: .5rem 0 } summary { cursor: pointer; color: var(--mut) }
+  .grade { font-size: 1.25rem; margin: .5rem 0 } .grade.none, .grade.single { color: var(--bad) } .grade.unproven { color: var(--warn) } .grade.proven { color: var(--ok) }
   .tag { font-size: .75rem; border: 1px solid var(--line); border-radius: 3px; padding: 0 .3rem; color: var(--mut) }
 </style>
 </head>
@@ -39,7 +40,7 @@
   <label>lat <input id="lat" size="7" placeholder="30.3"></label>
   <label>lon <input id="lon" size="7" placeholder="-97.7"></label>
   <button id="geo" type="button">Use my location</button>
-  <small>Rounded to 0.1 degree (~11 km). Self-reported: anyone merging your report trusts it.</small>
+  <small>Rounded to 0.1 degree (~11 km). Self-reported: anyone merging your report trusts it. Changing it after a run updates your own vantage.</small>
 </div>
 <details><summary>Settings</summary>
   <div class="row">
@@ -52,6 +53,8 @@
 <div id="status" class="mut"></div>
 
 <div id="results" hidden>
+  <h2>Resilience</h2>
+  <p id="grade" class="grade"></p>
   <h2>Summary</h2>
   <div class="cards" id="cards"></div>
   <p id="near"></p>
