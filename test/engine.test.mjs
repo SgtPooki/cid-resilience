@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { varint, base32, parseCar, parseCarChunk, sha256hex } from '../engine/car.js'
+import { varint, base32, parseCar, parseCarChunk, sha256hex, concat } from '../engine/car.js'
 import { protocolsFromMetadata, httpUrl, endpoints } from '../engine/discover.js'
 import { challenge, median } from '../engine/probe.js'
 import { haversineKm, disjoint, separated, maxSeparatedSet, score, radiusKm, inconsistencies } from '../engine/score.js'
@@ -36,17 +36,19 @@ test('parseCar reads blocks and incremental parse handles split chunks', async (
   const bodies = [new TextEncoder().encode('hello'), new Uint8Array(300).fill(7)]
   const { car, cids } = await carFor(bodies)
   const blocks = parseCar(car)
+  assert.equal(blocks[0].cid, 'bafkreibm6jg3ux5qumhcn2b3flc3tyu6dmlb4xa7u5bf44yegnrjhc4yeq') // raw sha256("hello"), computed with python base64.b32encode
   assert.deepEqual(blocks.map((b) => b.cid), cids)
   assert.equal(blocks[1].size, 300)
   assert.equal(await sha256hex(blocks[0].bytes), blocks[0].digest)
-  // feed byte by byte
-  let buf = new Uint8Array(0), state = { headerDone: false }, got = []
-  for (const byte of car) {
-    buf = Uint8Array.from([...buf, byte])
-    const r = parseCarChunk(buf, state); buf = r.rest; got.push(...r.blocks)
-  }
-  assert.deepEqual(got.map((b) => b.cid), cids)
-  assert.equal(buf.length, 0)
+  // split mid-way through the second section: first chunk yields block 0 only, remainder completes block 1
+  const cut = car.length - 100
+  const state = { headerDone: false }
+  const first = parseCarChunk(car.subarray(0, cut), state)
+  assert.deepEqual(first.blocks.map((b) => b.cid), [cids[0]])
+  assert.equal(state.headerDone, true)
+  const second = parseCarChunk(concat(first.rest, car.subarray(cut)), state)
+  assert.deepEqual(second.blocks.map((b) => b.cid), [cids[1]])
+  assert.equal(second.rest.length, 0)
   assert.throws(() => parseCar(car.subarray(0, car.length - 1)), /trailing/)
 })
 
@@ -69,11 +71,16 @@ test('IPNI metadata and multiaddr parsing', () => {
   assert.deepEqual(endpoints(peers), [{ url: 'https://x.io', peers: ['A', 'B'], https: true }])
 })
 
-const fakeFetch = (delays, bodies = {}) => async (url) => {
-  const c = url.match(/\/ipfs\/([^?]+)/)[1]
-  await new Promise((r) => setTimeout(r, delays[c] ?? 0))
-  const body = bodies[c] ?? new Uint8Array(0)
-  return { ok: !!(c === 'bafkqaaa' || bodies[c]), status: bodies[c] || c === 'bafkqaaa' ? 200 : 404, arrayBuffer: async () => body.buffer }
+// Fake gateway with a fake clock: each fetch advances `t` by the configured latency, no real timers.
+const fakeGateway = (latency, bodies = {}) => {
+  let t = 0
+  const fetchFn = async (url) => {
+    const c = url.match(/\/ipfs\/([^?]+)/)[1]
+    t += latency[c] ?? 1
+    const body = bodies[c] ?? new Uint8Array(0)
+    return { ok: !!(c === 'bafkqaaa' || bodies[c]), status: bodies[c] || c === 'bafkqaaa' ? 200 : 404, arrayBuffer: async () => body.buffer }
+  }
+  return { fetchFn, now: () => t }
 }
 
 test('challenge classifies local, on-demand, invalid, unreachable', async () => {
@@ -81,10 +88,12 @@ test('challenge classifies local, on-demand, invalid, unreachable', async () => 
   const digest = await sha256hex(body)
   const blocks = [{ cid: 'bX', mhCode: 0x12, digest }]
   const opts = { rounds: 2, maxExcessMs: 30 }
-  assert.equal((await challenge('http://h', blocks, { ...opts, fetchFn: fakeFetch({ bX: 2 }, { bX: body }) })).status, 'local')
-  assert.equal((await challenge('http://h', blocks, { ...opts, fetchFn: fakeFetch({ bX: 80 }, { bX: body }) })).status, 'on-demand')
-  assert.equal((await challenge('http://h', blocks, { ...opts, fetchFn: fakeFetch({}, { bX: new Uint8Array(3) }) })).status, 'invalid')
-  assert.equal((await challenge('http://h', blocks, { ...opts, fetchFn: fakeFetch({}, {}) })).status, 'invalid')
+  const local = await challenge('http://h', blocks, { ...opts, ...fakeGateway({ bafkqaaa: 10, bX: 25 }, { bX: body }) })
+  assert.equal(local.status, 'local'); assert.equal(local.baseline, 10); assert.equal(local.excess, 15)
+  const slow = await challenge('http://h', blocks, { ...opts, ...fakeGateway({ bafkqaaa: 10, bX: 40 }, { bX: body }) })
+  assert.equal(slow.status, 'on-demand'); assert.equal(slow.excess, 30) // threshold is exclusive
+  assert.equal((await challenge('http://h', blocks, { ...opts, ...fakeGateway({}, { bX: new Uint8Array(3) }) })).status, 'invalid')
+  assert.equal((await challenge('http://h', blocks, { ...opts, ...fakeGateway({}, {}) })).status, 'invalid')
   assert.equal((await challenge('http://h', blocks, { ...opts, fetchFn: async () => { throw new Error('boom') } })).status, 'unreachable')
   assert.equal(median([3, 1, 2]), 2)
 })

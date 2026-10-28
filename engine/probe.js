@@ -37,19 +37,19 @@ export async function fetchBlocks(cid, urls, { maxBlocks = 64, timeoutMs = 30000
   return null
 }
 // Time to first byte + body. -> { ttfb, total, ok, status, body }
-export async function timedGet(base, cid, { timeoutMs = 15000, fetchFn = fetch } = {}) {
-  const t0 = performance.now()
+export async function timedGet(base, cid, { timeoutMs = 15000, fetchFn = fetch, now = () => performance.now() } = {}) {
+  const t0 = now()
   const r = await fetchFn(`${base}/ipfs/${cid}?format=raw`, { headers: { accept: 'application/vnd.ipld.raw' }, signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' })
-  const ttfb = performance.now() - t0
+  const ttfb = now() - t0
   const body = new Uint8Array(await r.arrayBuffer())
-  return { ttfb, total: performance.now() - t0, ok: r.ok, status: r.status, body }
+  return { ttfb, total: now() - t0, ok: r.ok, status: r.status, body }
 }
 
 export const pick = (blocks, n, rand = Math.random) => blocks.toSorted(() => rand() - 0.5).slice(0, n)
 
 // Classify one endpoint. -> { status: 'local'|'on-demand'|'invalid'|'unreachable', baseline, probe, excess, verified, rounds, error? }
-export async function challenge(base, blocks, { rounds = 5, maxExcessMs = 30, fetchFn = fetch, timeoutMs = 15000 } = {}) {
-  const opts = { fetchFn, timeoutMs }
+export async function challenge(base, blocks, { rounds = 5, maxExcessMs = 30, fetchFn = fetch, timeoutMs = 15000, now } = {}) {
+  const opts = { fetchFn, timeoutMs, now }
   try {
     const warm = await timedGet(base, IDENTITY, opts)
     if (!warm.ok) return { status: 'unreachable', error: `bafkqaaa ${warm.status}` }
