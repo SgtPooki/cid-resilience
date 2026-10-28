@@ -2,7 +2,7 @@
 
 Paste a CID, learn how many independent copies of it really exist and how spread out they are.
 
-- Web app: https://sgtpooki.github.io/cid-resilience/ or, served from Filecoin Onchain Cloud, https://bafybeig43wchznmt6mcythdifebmy7qfmxm6mqkfhqvbcm6jfblzekbhum.ipfs.inbrowser.link/
+- Web app: https://sgtpooki.github.io/cid-resilience/ or, served from Filecoin Onchain Cloud, https://bafybeibqlycb6a2ag6tqzlvslxqbhjgc4suk3ghqtudsepkncu6s4uze3y.ipfs.inbrowser.link/
 - No backend. Everything runs in your browser against public IPFS primitives.
 - No provider cooperation. Nothing to install on the storage provider side.
 
@@ -68,4 +68,4 @@ Node 22 or newer, no dependencies. The CLI and the web app share `engine/`.
 
 ## Hosting
 
-The app is plain static files (`index.html`, `app.js`, `engine/`). It is deployed to GitHub Pages from `main`, and to Filecoin Onchain Cloud (calibration, provider ezpdpz-calib2, data set 141) with `filecoin-pin add --provider-id 2 --copies 1 dist/` where `dist/` holds `index.html`, `app.js` and `engine/`. Current root CID: `bafybeig43wchznmt6mcythdifebmy7qfmxm6mqkfhqvbcm6jfblzekbhum`, served through `inbrowser.link`. Paste that CID into the app to measure the app itself. Helia is loaded on demand from jsdelivr only when a bitswap-only peer is found; everything else is first-party code.
+The app is plain static files (`index.html`, `app.js`, `engine/`). It is deployed to GitHub Pages from `main`, and to Filecoin Onchain Cloud (calibration, provider ezpdpz-calib2, data set 141) with `filecoin-pin add --provider-id 2 --copies 1 dist/` where `dist/` holds `index.html`, `app.js` and `engine/`. Current root CID: `bafybeibqlycb6a2ag6tqzlvslxqbhjgc4suk3ghqtudsepkncu6s4uze3y`, served through `inbrowser.link`. Paste that CID into the app to measure the app itself. Helia is loaded on demand from jsdelivr only when a bitswap-only peer is found; everything else is first-party code.
