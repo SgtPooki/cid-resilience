@@ -33,7 +33,7 @@ Per provider you get one of: `advertised` (listed, never answered), `untested`, 
 - **Private fibre.** Like Benson et al. and Gondree & Peterson, it assumes the provider has no faster-than-Internet link between its sites, and that paths are fibre or slower (a microwave relay could look up to 1.47x closer).
 - **Durability.** A CDN edge with a warm cache is a real copy right now and not one next week. It is counted separately.
 
-The full comparison with PoRep and PDP is in [research/vs-porep.md](research/vs-porep.md) and the attack table in [research/threat-model.md](research/threat-model.md). Every protocol claim traces to a pinned permalink and quote in [research/sources-porep.md](research/sources-porep.md), [research/sources-pdp.md](research/sources-pdp.md), or [research/sources-ipfs-geo.md](research/sources-ipfs-geo.md).
+The full comparison with PoRep and PDP is in [research/vs-porep.md](research/vs-porep.md), the attack table in [research/threat-model.md](research/threat-model.md), and a plain-language summary of what a result does and does not establish in [research/what-it-answers.md](research/what-it-answers.md). Every protocol claim traces to a pinned permalink and quote in [research/sources-porep.md](research/sources-porep.md), [research/sources-pdp.md](research/sources-pdp.md), or [research/sources-ipfs-geo.md](research/sources-ipfs-geo.md).
 
 ## A real example
 
