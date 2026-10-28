@@ -1,4 +1,4 @@
-import { run, analyze, newVantage, withinKm, radiusKm, disksOf, inconsistencies, shareUrl, reportsFromUrl, sanitize, grade } from './engine/index.js'
+import { run, analyze, newVantage, withinKm, radiusKm, haversineKm, disksOf, inconsistencies, shareUrl, reportsFromUrl, sanitize, grade } from './engine/index.js'
 
 const $ = (id) => document.getElementById(id)
 let reports = [], providers = new Map(), running = false
@@ -62,6 +62,23 @@ function renderMerged() {
   $('sepnote').textContent = (s.locatedVantages >= 2
     ? `${s.provenSeparate} responder location${s.provenSeparate === 1 ? '' : 's'} proven geographically apart (${s.operators} networks, ${s.boxes} boxes seen${s.capped ? '; only the first 20 boxes were searched, so this is a lower bound' : ''}). Geographic separation only: it says nothing about shared ownership or software. Vantage locations are self-reported.`
     : `From one vantage every distance disk contains you, so nothing can be proven apart. Next step: copy the share link below and open it from another city, then press Measure there. Conservative count meanwhile: ${s.operators} networks.`) + when
+  // Separation certificate: name the pair, both disks, and the gap, so the proof is readable without the table.
+  $('cert').innerHTML = s.provenSeparate >= 2 ? (() => {
+    const sepBoxes = boxes.filter((c) => sepIds.has(c.key))
+    const best = (c) => c.providers.flatMap((p) => p.obs.filter((o) => o.status === 'local' && o.vantage?.lat != null).map((o) => ({ p, o, r: radiusKm(o.baseline) }))).toSorted((a, b) => a.r - b.r)[0]
+    const lines = []
+    for (let i = 0; i < sepBoxes.length; i++) for (let j = i + 1; j < sepBoxes.length; j++) {
+      const a = sepBoxes[i], b = sepBoxes[j]
+      let pick = null
+      for (const pa of a.providers) for (const oa of pa.obs) for (const pb of b.providers) for (const ob of pb.obs) {
+        if (oa.status !== 'local' || ob.status !== 'local' || oa.vantage?.lat == null || ob.vantage?.lat == null) continue
+        const ra = radiusKm(oa.baseline), rb = radiusKm(ob.baseline), gap = haversineKm(oa.vantage, ob.vantage)
+        if (gap > ra + rb && (!pick || gap - ra - rb > pick.margin)) pick = { pa, oa, ra, pb, ob, rb, gap, margin: gap - ra - rb }
+      }
+      if (pick) lines.push(`<li><b>${esc(pick.pa.url ?? pick.pa.peers?.[0])}</b> (${esc(pick.pa.ip)}${pick.pa.holder ? ', ' + esc(pick.pa.holder) : ''}) is within ${fmt(pick.ra)} km of ${esc(pick.oa.vantage.label)}; <b>${esc(pick.pb.url ?? pick.pb.peers?.[0])}</b> (${esc(pick.pb.ip)}${pick.pb.holder ? ', ' + esc(pick.pb.holder) : ''}) is within ${fmt(pick.rb)} km of ${esc(pick.ob.vantage.label)}; those vantages are ${fmt(pick.gap)} km apart, so the two disks cannot overlap (margin ${fmt(pick.margin)} km).</li>`)
+    }
+    return `<p>Why these count as apart:</p><ul>${lines.join('')}</ul>`
+  })() : ''
   $('rows').innerHTML = merged.providers
     .toSorted((a, b) => rank(a) - rank(b))
     .map((p) => row(p, p.obs).replace('<tr>', `<tr${boxes.find((c) => c.providers.includes(p) && sepIds.has(c.key)) ? ' style="outline:1px solid var(--ok)"' : ''}>`)).join('')
