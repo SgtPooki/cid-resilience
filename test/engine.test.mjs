@@ -129,7 +129,7 @@ test('score counts failure domains, not providers; needs two located vantages', 
 
 test('merge + fragment round trip', async () => {
   const r1 = { v: 1, cid: 'bafy1', vantage: { id: 'a', label: 'nyc', lat: 40.7, lon: -74 }, providers: [{ url: 'https://x', peers: ['P'], ip: '1.1.1.1', status: 'local', baseline: 10 }] }
-  const r2 = { v: 1, cid: 'bafy1', vantage: { id: 'b', label: 'lon', lat: 51.5, lon: -0.1 }, providers: [{ url: 'https://x', peers: ['Q'], status: 'on-demand', baseline: 80 }] }
+  const r2 = { v: 1, cid: 'bafy1', vantage: { id: 'b', label: 'lon', lat: 51.5, lon: -0.1 }, providers: [{ url: 'https://x', peers: ['Q'], ip: '1.1.1.1', status: 'on-demand', baseline: 80 }] }
   const m = merge([r1, r2, r1])
   assert.equal(m.vantages.length, 2)
   assert.equal(m.providers.length, 1)
@@ -137,6 +137,9 @@ test('merge + fragment round trip', async () => {
   assert.equal(m.providers[0].ip, '1.1.1.1')
   assert.equal(m.providers[0].obs.length, 2)
   assert.throws(() => merge([r1, { ...r2, cid: 'other' }]), /different CIDs/)
+  // geo-DNS: same URL, different IP from another vantage is a separate box
+  const r3 = { ...r2, vantage: { id: 'c', label: 'fra', lat: 50.1, lon: 8.7 }, providers: [{ ...r2.providers[0], ip: '2.2.2.2' }] }
+  assert.equal(merge([r1, r3]).providers.length, 2)
   const frag = await encodeReports([r1, r2])
   assert.match(frag, /^[A-Za-z0-9_-]+$/)
   assert.deepEqual(await decodeReports(frag), [r1, r2])

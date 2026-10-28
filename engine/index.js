@@ -21,7 +21,7 @@ export async function run(cid, { vantage, rounds = 5, maxExcessMs = 30, concurre
   onEvent({ type: 'discovered', peers: d.peers.size, endpoints: eps.length, bitswapPeers: bs.length, counts: d.counts, errors: d.errors })
 
   const providers = eps.map((e) => ({ url: e.url, peers: e.peers, status: 'advertised' }))
-  for (const p of bs) providers.push({ url: null, peers: [p.id], addrs: p.addrs, status: 'advertised' })
+  for (const p of bs) providers.push({ url: null, peers: [p.id], addrs: p.addrs, ip: p.addrs.map((a) => a.match(/^\/ip4\/([\d.]+)\//)?.[1]).find(Boolean) ?? null, status: 'advertised' })
   for (const p of providers) onEvent({ type: 'provider', provider: p })
   await annotate(providers, { fetchFn })
   for (const p of providers) onEvent({ type: 'provider', provider: p })

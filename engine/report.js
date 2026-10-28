@@ -12,7 +12,8 @@ export function merge(reports) {
     if (vantages.some((v) => v.id === r.vantage.id)) continue
     vantages.push(r.vantage)
     for (const p of r.providers) {
-      const key = p.url ?? `peer:${p.peers?.[0]}`
+      // Same URL with a different IP (geo-DNS, anycast) is a different box, so it gets its own row.
+      const key = (p.url ?? `peer:${p.peers?.[0]}`) + (p.ip ? `@${p.ip}` : '')
       const m = providers.get(key) ?? providers.set(key, { key, url: p.url, peers: [], ip: p.ip, asn: p.asn, holder: p.holder, cdn: !!p.cdn, obs: [] }).get(key)
       for (const id of p.peers ?? []) if (!m.peers.includes(id)) m.peers.push(id)
       m.ip ??= p.ip; m.asn ??= p.asn; m.holder ??= p.holder; m.cdn ||= !!p.cdn

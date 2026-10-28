@@ -1,24 +1,25 @@
-// Browser-only Bitswap probe via helia, loaded lazily from esm.sh so the app stays dependency-free.
+// Browser-only Bitswap probe via helia, loaded lazily from jsdelivr so the app stays dependency-free.
+// (esm.sh's build of helia never starts libp2p and its block-brokers bundle 404s; jsdelivr +esm works.)
 // Baseline = libp2p ping RTT (G 4b); probe = bitswap block fetch (G 4a). Hash verification is done by helia on receipt.
 import { median, pick } from './probe.js'
 
 let libP
 const lib = () => (libP ??= (async () => {
   const [{ createHelia }, { bitswap }, { multiaddr }, { CID }, { peerIdFromString }] = await Promise.all([
-    import('https://esm.sh/helia'), import('https://esm.sh/@helia/block-brokers'), import('https://esm.sh/@multiformats/multiaddr'),
-    import('https://esm.sh/multiformats/cid'), import('https://esm.sh/@libp2p/peer-id'),
+    import('https://cdn.jsdelivr.net/npm/helia@5/+esm'), import('https://cdn.jsdelivr.net/npm/@helia/block-brokers@4/+esm'),
+    import('https://cdn.jsdelivr.net/npm/@multiformats/multiaddr@12/+esm'), import('https://cdn.jsdelivr.net/npm/multiformats@13/cid/+esm'),
+    import('https://cdn.jsdelivr.net/npm/@libp2p/peer-id@5/+esm'),
   ])
-  // esm.sh build: the libp2p getter throws NotStarted unless we start explicitly after construction.
-  const helia = await createHelia({ blockBrokers: [bitswap()], routers: [], libp2p: { peerDiscovery: [] }, start: false })
-  await helia.start()
+  const helia = await createHelia({ blockBrokers: [bitswap()], routers: [], libp2p: { peerDiscovery: [] } })
   return { helia, multiaddr, CID, peerIdFromString }
 })())
 
 export async function bitswapProbe(peer, blocks, { rounds = 5, maxExcessMs = 30 } = {}) {
   try {
     const { helia, multiaddr, CID, peerIdFromString } = await lib()
-    const pid = peerIdFromString(peer.id)
-    const mas = peer.addrs.map((a) => multiaddr(a.includes('/p2p/') ? a : `${a}/p2p/${peer.id}`))
+    const id = peer.id ?? peer.peers?.[0]
+    const pid = peerIdFromString(id)
+    const mas = peer.addrs.map((a) => multiaddr(a.includes('/p2p/') ? a : `${a}/p2p/${id}`))
     await helia.libp2p.dial(mas, { signal: AbortSignal.timeout(15000) })
     const ping = helia.libp2p.services.ping
     const baseline = []
