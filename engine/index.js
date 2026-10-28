@@ -29,7 +29,7 @@ export async function run(cid, { vantage, rounds = 5, maxExcessMs = 30, concurre
   const usable = eps.filter((e) => e.https || !mixedContent).map((e) => e.url)
   const dag = await fetchBlocks(cid, usable, { fetchFn })
   if (!dag) {
-    for (const p of providers) Object.assign(p, { status: 'unreachable', error: 'no endpoint served the DAG' })
+    for (const p of providers) Object.assign(p, { status: 'untested', error: 'no endpoint served the DAG' })
     onEvent({ type: 'dag', blocks: 0 })
   } else {
     onEvent({ type: 'dag', blocks: dag.blocks.length, from: dag.from })
@@ -40,7 +40,7 @@ export async function run(cid, { vantage, rounds = 5, maxExcessMs = 30, concurre
         if (p.url && !p.url.startsWith('https') && mixedContent) Object.assign(p, { status: 'unreachable', error: 'http endpoint blocked from an https page' })
         else if (p.url) Object.assign(p, await challenge(p.url, dag.blocks, { rounds, maxExcessMs, fetchFn }), { warmed: p.url === dag.from || undefined })
         else if (bitswapProbe) Object.assign(p, await (bsLock = bsLock.then(() => bitswapProbe(p, dag.blocks, { rounds, maxExcessMs }))))
-        else Object.assign(p, { status: 'unreachable', error: 'bitswap-only peer, no probe available here' })
+        else Object.assign(p, { status: 'untested', error: 'bitswap-only peer; probed only in the web app' })
         onEvent({ type: 'provider', provider: p })
       }
     }

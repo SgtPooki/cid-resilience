@@ -24,17 +24,17 @@ function renderLive() {
   $('rows').innerHTML = [...providers.values()].map((p) => row(p, [{ vantage: current, status: p.status, baseline: p.baseline, excess: p.excess, verified: p.verified, rounds: p.rounds, error: p.error }])).join('')
 }
 
-const STATUS = new Set(['advertised', 'local', 'on-demand', 'invalid', 'unreachable'])
+const STATUS = new Set(['advertised', 'untested', 'local', 'on-demand', 'invalid', 'unreachable'])
 const st = (s) => (STATUS.has(s) ? s : 'advertised')
 const safeHttp = (u) => (typeof u === 'string' && /^https?:\/\/[\w.-]+(:\d+)?$/.test(u) ? u : null)
-const BEST = ['local', 'on-demand', 'invalid', 'unreachable', 'advertised']
+const BEST = ['local', 'on-demand', 'invalid', 'unreachable', 'untested', 'advertised']
 function row(p, obs) {
   const ob = obs.toSorted((a, b) => BEST.indexOf(st(a.status)) - BEST.indexOf(st(b.status)))[0] // best observation across vantages; per-vantage detail is in the last column
   const url = safeHttp(p.url)
   const where = url ? `<a href="${esc(url)}/ipfs/bafkqaaa" class="mono">${esc(url)}</a>` : `<span class="mono">${esc(p.peers?.[0])}</span> <span class="tag">bitswap</span>`
   const op = [esc(p.ip), p.holder ? esc(`AS${p.asn} ${p.holder}`) : p.asn ? esc(`AS${p.asn}`) : ''].filter(Boolean).join('<br>') + (p.cdn ? ' <span class="tag">cdn</span>' : '') + (obs.some((o) => o.warmed) ? ' <span class="tag" title="served the sample CAR first, so its cache was warm before the challenge">warmed</span>' : '')
   const km = obs.filter((o) => o.status === 'local' && o.vantage?.lat != null).map((o) => `${fmt(radiusKm(o.baseline))}`).join(' / ')
-  const seen = obs.map((o) => `<span class="${st(o.status)}">${esc(o.vantage?.label ?? '?')}: ${st(o.status)}${o.error ? ` (${esc(o.error)})` : ''}</span>`).join('<br>')
+  const seen = obs.map((o) => `<span class="${st(o.status)}">${esc(o.vantage?.label ?? '?')}: ${st(o.status)}${o.weak ? ' (weak timing)' : ''}${o.error ? ` (${esc(o.error)})` : ''}</span>`).join('<br>')
   return `<tr><td class="${st(ob.status)}">${st(ob.status)}</td><td>${where}<br><small>${(p.peers ?? []).length} peer id${p.peers?.length === 1 ? '' : 's'}</small></td><td>${op}</td><td class="n">${fmt(ob.baseline)}</td><td class="n">${fmt(ob.excess)}</td><td class="n">${ob.verified != null ? `${fmt(ob.verified)}/${fmt(ob.rounds)}` : ''}</td><td class="n">${km}</td><td>${seen}</td></tr>`
 }
 
@@ -45,7 +45,7 @@ function renderMerged() {
   $('grade').textContent = g.headline; $('grade').className = `grade ${g.level}`
   const sepIds = new Set(s.separateKeys)
   $('cards').innerHTML = [
-    ['advertised', s.advertised, 'IPNI + delegated routing records, deduped by endpoint'],
+    ['advertised', s.advertised, 'provider rows: one per HTTP endpoint and IP, plus one per bitswap-only peer'],
     ['served valid', s.servedValid, 'answered a random block that hashed correctly'],
     ['local copy', s.local, 'valid and not measurably slower than the no-op baseline, from any vantage (CDN edges included)'],
     ['on demand', s.onDemand, 'valid but slower than the threshold from some vantage'],
@@ -75,7 +75,7 @@ function renderMerged() {
   shareUrl(location.href, reports).then((u) => { $('share').value = u; history.replaceState(null, '', u) })
   $('results').hidden = false
 }
-const rank = (p) => ({ local: 0, 'on-demand': 1, invalid: 2, unreachable: 3 }[p.obs[0]?.status] ?? 4)
+const rank = (p) => ({ local: 0, 'on-demand': 1, invalid: 2, unreachable: 3, untested: 4 }[p.obs[0]?.status] ?? 5)
 
 let current
 $('run').onclick = async () => {
@@ -92,7 +92,7 @@ $('run').onclick = async () => {
       vantage: current, rounds: Number($('rounds').value), maxExcessMs: Number($('excess').value), bitswapProbe,
       onEvent: (e) => {
         if (e.type === 'discovered') $('status').textContent = `${e.peers} peers advertised (ipni ${e.counts.ipni}, delegated ${e.counts.delegated}), ${e.endpoints} http endpoints, ${e.bitswapPeers} browser-dialable bitswap peers${Object.keys(e.errors).length ? `; discovery errors: ${JSON.stringify(e.errors)}` : ''}. Fetching DAG...`
-        if (e.type === 'dag') $('status').textContent = e.blocks ? `${e.blocks} blocks sampled from ${e.from}. Challenging providers...${e.blocks < Number($('rounds').value) ? ' (fewer blocks than rounds: timing is weak)' : ''}` : 'no endpoint served the DAG'
+        if (e.type === 'dag') $('status').textContent = e.blocks ? `${e.blocks} block${e.blocks === 1 ? '' : 's'} sampled from ${e.from}. Challenging providers...${e.blocks < 3 ? ' This DAG has fewer than 3 blocks, so each provider gets one challenge pair and timing is marked weak.' : ''}` : 'no endpoint served the DAG'
         if (e.type === 'provider') { providers.set(e.provider.url ?? e.provider.peers[0], e.provider); renderLive() }
       },
     })

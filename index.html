@@ -16,7 +16,7 @@
   table { border-collapse: collapse; width: 100%; font-size: .9rem } th, td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top }
   td.n { text-align: right; font-variant-numeric: tabular-nums } th.n { text-align: right }
   .mono { font-family: ui-monospace, monospace; font-size: .85rem; word-break: break-all }
-  .local { color: var(--ok) } .on-demand { color: var(--warn) } .invalid, .unreachable { color: var(--bad) } .advertised, .probing { color: var(--dim) }
+  .local { color: var(--ok) } .on-demand { color: var(--warn) } .invalid, .unreachable { color: var(--bad) } .advertised, .untested, .probing { color: var(--dim) }
   .mut { color: var(--mut) } small { color: var(--mut) }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem; margin: 1rem 0 }
   .card { border: 1px solid var(--line); border-radius: 6px; padding: .6rem } .card b { display: block; font-size: 1.6rem } .card span { font-size: .8rem; color: var(--mut) }
@@ -40,7 +40,7 @@
   <label>lat <input id="lat" size="7" placeholder="30.3"></label>
   <label>lon <input id="lon" size="7" placeholder="-97.7"></label>
   <button id="geo" type="button">Use my location</button>
-  <small>Rounded to 0.1 degree (~11 km). Self-reported: anyone merging your report trusts it. Changing it after a run updates your own vantage.</small>
+  <small>The location button rounds to 0.1 degree (~11 km); typed values are used as given. Self-reported: anyone merging your report trusts it. Changing it after a run updates your own vantage.</small>
 </div>
 <details><summary>Settings</summary>
   <div class="row">
@@ -65,7 +65,7 @@
     <thead><tr><th>status</th><th>endpoint</th><th>IP / operator</th><th class="n">baseline ms</th><th class="n">excess ms</th><th class="n">verified</th><th class="n">≤ km away</th><th>seen from</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
-  <p><small>"≤ km away" is 100 km per ms of baseline round trip, an upper bound on the responder's distance from that vantage. One vantage can never prove two providers are apart; two vantages with non-overlapping disks can.</small></p>
+  <p><small>"≤ km away" is 102 km per ms of baseline round trip plus 11 km, an upper bound on the responder's distance from that vantage (light in fibre), capped at half the Earth. It is not an estimate of where the responder is. One vantage can never prove two providers are apart; two vantages with non-overlapping disks can. "untested" means no probe ran from that vantage, not that the provider is down.</small></p>
 
   <h2>Vantages</h2>
   <ul id="vantages"></ul>

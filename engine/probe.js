@@ -78,6 +78,7 @@ export async function challenge(base, blocks, { rounds = 5, maxExcessMs = 30, fe
     return {
       status: !allValid ? 'invalid' : excess < maxExcessMs ? 'local' : 'on-demand',
       baseline: median(baseline), probe: median(probe), excess, transfer: median(transfer), verified, rounds: picks.length, failed,
+      weak: picks.length < 3 || excess < -50 || undefined, // fewer than 3 pairs, or baseline noisier than the signal: timing is not meaningful
     }
   } catch (err) {
     return { status: 'unreachable', error: err.cause?.code ?? (err.name === 'TypeError' ? 'fetch failed (TLS, CORS or DNS)' : err.name) }

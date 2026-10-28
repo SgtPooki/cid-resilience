@@ -3,7 +3,7 @@
 
 export const newVantage = (label, loc) => ({ id: Math.random().toString(36).slice(2, 10), label: label || 'unnamed', lat: loc?.lat ?? null, lon: loc?.lon ?? null, ts: new Date().toISOString() })
 
-const STATUSES = new Set(['advertised', 'local', 'on-demand', 'invalid', 'unreachable'])
+const STATUSES = new Set(['advertised', 'untested', 'local', 'on-demand', 'invalid', 'unreachable'])
 const num = (x) => (typeof x === 'number' && isFinite(x) ? x : null)
 // Shared reports are untrusted input: keep only known fields with sane types, drop anything else.
 export function sanitize(r) {
@@ -20,7 +20,7 @@ export function sanitize(r) {
       asn: num(p.asn), holder: p.holder == null ? null : String(p.holder).slice(0, 60), cdn: !!p.cdn,
       status: STATUSES.has(p.status) ? p.status : 'advertised',
       baseline: num(p.baseline), probe: num(p.probe), excess: num(p.excess), transfer: num(p.transfer), verified: num(p.verified), rounds: num(p.rounds),
-      error: p.error == null ? null : String(p.error).slice(0, 80), warmed: !!p.warmed, transport: p.transport === 'bitswap' ? 'bitswap' : undefined,
+      error: p.error == null ? null : String(p.error).slice(0, 80), warmed: !!p.warmed, weak: !!p.weak, transport: p.transport === 'bitswap' ? 'bitswap' : undefined,
     })).filter((p) => p.url || p.peers.length),
   }
 }
@@ -39,7 +39,7 @@ export function merge(reports) {
       const m = providers.get(key) ?? providers.set(key, { key, url: p.url, peers: [], ip: p.ip, asn: p.asn, holder: p.holder, cdn: !!p.cdn, obs: [] }).get(key)
       for (const id of p.peers ?? []) if (!m.peers.includes(id)) m.peers.push(id)
       m.ip ??= p.ip; m.asn ??= p.asn; m.holder ??= p.holder; m.cdn ||= !!p.cdn
-      m.obs.push({ vantageId: r.vantage.id, vantage: r.vantage, status: p.status, baseline: p.baseline, probe: p.probe, excess: p.excess, transfer: p.transfer, verified: p.verified, rounds: p.rounds, error: p.error, warmed: p.warmed })
+      m.obs.push({ vantageId: r.vantage.id, vantage: r.vantage, status: p.status, baseline: p.baseline, probe: p.probe, excess: p.excess, transfer: p.transfer, verified: p.verified, rounds: p.rounds, error: p.error, warmed: p.warmed, weak: p.weak })
     }
   }
   return { cid: reports[0]?.cid, vantages, providers: [...providers.values()] }

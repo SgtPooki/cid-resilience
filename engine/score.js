@@ -4,7 +4,8 @@
 export const KM_PER_MS = 102.1
 export const LOCATION_SLACK_KM = 11 // vantage coordinates are rounded to 0.1 degree (~11 km) before sharing
 
-export const radiusKm = (rttMs) => rttMs * KM_PER_MS + LOCATION_SLACK_KM
+export const MAX_RADIUS_KM = 20015 // half the Earth's circumference: a larger disk means 'anywhere'
+export const radiusKm = (rttMs) => Math.min(rttMs * KM_PER_MS + LOCATION_SLACK_KM, MAX_RADIUS_KM)
 
 export function haversineKm(a, b) {
   const R = 6371, toRad = (d) => (d * Math.PI) / 180
@@ -78,9 +79,9 @@ export const withinKm = (providers, vantageId, km) =>
 
 // Headline grade from a score. Levels: none < single < unproven < proven.
 export function grade(s) {
-  if (!s.local) return { level: 'none', headline: s.servedValid ? 'No local copies observed: every provider that answered was slower than its own baseline' : 'No verified copies observed (unreachable providers may still hold one)' }
+  if (!s.local) return { level: 'none', headline: s.servedValid ? 'No local copies observed: every provider that answered was slower than its baseline by more than the threshold' : 'No verified copies observed (unreachable providers may still hold one)' }
   if (s.boxes <= 1) return { level: 'single', headline: 'Single point of failure: only one box (IP) observed with a local copy' }
   if (s.locatedVantages < 2) return { level: 'unproven', headline: `${s.operators} network${s.operators === 1 ? '' : 's'} on ${s.boxes} boxes, separation unproven (needs a second located vantage)` }
   if (s.provenSeparate < 2) return { level: 'unproven', headline: `${s.operators} network${s.operators === 1 ? '' : 's'} on ${s.boxes} boxes, but no two proven apart` }
-  return { level: 'proven', headline: `${s.provenSeparate} copies proven geographically apart${s.capped ? ' (at least)' : ''}` }
+  return { level: 'proven', headline: `${s.provenSeparate} responders proven geographically apart${s.capped ? ' (at least)' : ''}` }
 }

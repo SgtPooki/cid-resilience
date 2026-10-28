@@ -25,9 +25,9 @@ Every protocol claim below cites a row in [sources-porep.md](sources-porep.md) (
 | Only economically rational adversaries | RAFT and LoSt both say fully malicious storage cannot be handled by timing | G 8, 9a |
 | Point-in-time | Each probe is one moment. PoSt and PDP run every 24 h with on-chain records (P §4, D §2). Continuous coverage needs repeated runs | INFERRED |
 | Samples a few blocks from a prefix | Like PDP's 5 challenges (D §1), but drawn from the first 64 blocks of the DAG, not the whole data set. A provider missing 1% of those passes 95% of 5-block probes; PDP's compounding math (D §8) applies only within the prefix | D §8; threat-model.md "selective serving" |
-| One vantage gives only an upper bound | d_max = 102 km per ms RTT. Two providers 1 ms apart in RTT from one vantage could be in the same rack or 100 km apart | G 10a, 10b, 9d |
+| One vantage gives only an upper bound | d_max = 102 km per ms RTT. Two responders inside two single-vantage disks can be anywhere up to the sum of both radii apart, so one vantage never separates them | G 10a, 10b, 9d |
 | Distance precision | Benson et al. report 900-1200 km error with cooperative datacenter-adjacent landmarks; Gondree & Peterson got <=12,000 km² on S3. Browser vantages are worse, not better | G 6, 7 |
-| Dark fiber / private backhaul | Breaks the "no exclusive link" assumption that every latency-geolocation paper makes | G 6, 7; threat-model.md |
+| Dark fiber / private backhaul | Breaks the "no exclusive link" assumption Benson (G 6) and Gondree & Peterson (G 7) make; GoAT (G 9b) instead assumes a light-speed adversary | G 6, 7, 9b; threat-model.md |
 
 ## 3. Use cases
 
@@ -36,7 +36,7 @@ Every protocol claim below cites a row in [sources-porep.md](sources-porep.md) (
 | **PDP marketing**: "your data is stored on N providers" | Evidence that N is N operators, not N provider IDs on one box | n/a (PDP data is not sealed) | N distinct provider IDs (D §5). Nothing about operators or sites (D §4, "approved/endorsed sets do not attest independence" is UNVERIFIED either way) | N endpoints that each served valid blocks from local storage, clustered by IP/ASN, and with two vantages, how many are provably apart. A number the sales page can cite with its method attached |
 | **IPFS archive reliability**: will this CID survive a provider outage? | Count of independent failure domains that hold a verified copy | n/a for plain IPFS content | n/a | Resilience score = largest set of pairwise proven-separate boxes (distinct IPs), with the ASN-level operator count as the fallback, never the raw IPNI provider count (which double-counts: one Peer ID per ContextID, G 2b) |
 | **MSP placement checks**: did the secondary copy land somewhere else? | synapse uploads to 2 providers by default, secondaries pull from the primary (D §5). Curio has an SP-to-SP pull endpoint (D §7) | n/a | Distinct provider IDs only (D §5) | RTT disks from two vantages for each provider endpoint; disjoint disks prove separate sites. Same IP or ASN for both flags a same-operator placement |
-| **Dealbot-style integrity + retrievability** | Per-block hash verification, TTFB, from a known probe location | n/a | Dealbot already does IPNI lookup + `/ipfs` fetch + hash (D §6), from one location (`probe_location` unknown until dealbot#246, D §6) | The same check from any browser, so probe_location is the user's own, and the baseline-vs-probe excess adds a local-vs-on-demand signal dealbot does not record |
+| **Dealbot-style integrity + retrievability** | Per-block hash verification, TTFB, from a known probe location | n/a | Dealbot already does IPNI lookup + `/ipfs` fetch + hash (D §6), from one location (`probe_location` unknown until dealbot#246, D §6) | The same check from any browser, so probe_location is the user's own, and the baseline-vs-probe excess adds a local-vs-on-demand signal. INFERRED: dealbot's documented metrics are TTFB and last-byte (D §6); no baseline field appears in its events doc |
 
 ## 4. One-line summary
 
