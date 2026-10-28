@@ -55,8 +55,8 @@ export function parseCarChunk(buf, state = { headerDone: false }) {
     const [secLen, start] = r
     const end = start + secLen
     if (end > buf.length) break
-    const c = parseCid(buf, start)
-    if (!c) throw new Error('bad CID in CAR section')
+    const c = parseCid(buf.subarray(0, end), start)
+    if (!c || c.end > end) throw new Error('CID overruns its CAR section')
     blocks.push({ cid: c.cid, mhCode: c.mhCode, digest: c.digest, size: end - c.end, bytes: buf.subarray(c.end, end) })
     i = end
   }
@@ -73,4 +73,35 @@ export const concat = (a, b) => { const out = new Uint8Array(a.length + b.length
 
 export async function sha256hex(bytes) {
   return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)))
+}
+
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+function base58(str) {
+  const bytes = [0]
+  for (const ch of str) {
+    let carry = B58.indexOf(ch)
+    if (carry < 0) throw new Error('bad base58')
+    for (let i = 0; i < bytes.length; i++) { carry += bytes[i] * 58; bytes[i] = carry & 0xff; carry >>= 8 }
+    while (carry) { bytes.push(carry & 0xff); carry >>= 8 }
+  }
+  for (const ch of str) { if (ch !== '1') break; bytes.push(0) }
+  return Uint8Array.from(bytes.reverse())
+}
+function unbase32(str) {
+  let bits = 0, val = 0
+  const out = []
+  for (const ch of str) {
+    const v = B32.indexOf(ch); if (v < 0) throw new Error('bad base32')
+    val = ((val << 5) | v) >>> 0; bits += 5
+    if (bits >= 8) { out.push((val >>> (bits - 8)) & 0xff); bits -= 8 }
+  }
+  return Uint8Array.from(out)
+}
+// CID string -> { mhCode, digest (hex) }. Supports CIDv0 (Qm..., base58btc) and base32 CIDv1 (b...).
+export function cidDigest(cid) {
+  const bytes = cid.startsWith('Qm') ? base58(cid) : cid.startsWith('b') ? unbase32(cid.slice(1)) : null
+  if (!bytes) throw new Error('unsupported CID encoding (use base32 CIDv1 or CIDv0)')
+  const c = parseCid(bytes, 0)
+  if (!c || c.end !== bytes.length) throw new Error('bad CID')
+  return { mhCode: c.mhCode, digest: c.digest }
 }

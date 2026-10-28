@@ -1,7 +1,10 @@
 // Distance bounds, multi-vantage separation, resilience score. Sources: G 9d, 10a, 10b.
-export const KM_PER_MS = 100 // G 10b: d_max = (RTT/2) * ~204 km/ms ~= 100 km per ms of RTT
+// G 10a: group index 1.4682 -> 299792.458/1.4682 = 204.19 km/ms one way, so 102.1 km per ms of RTT. Rounded UP: a
+// smaller constant would shrink disks and could manufacture a separation. (G 10b's "100 km per ms" is the rule of thumb.)
+export const KM_PER_MS = 102.1
+export const LOCATION_SLACK_KM = 11 // vantage coordinates are rounded to 0.1 degree (~11 km) before sharing
 
-export const radiusKm = (rttMs) => rttMs * KM_PER_MS
+export const radiusKm = (rttMs) => rttMs * KM_PER_MS + LOCATION_SLACK_KM
 
 export function haversineKm(a, b) {
   const R = 6371, toRad = (d) => (d * Math.PI) / 180
@@ -27,9 +30,10 @@ export function inconsistencies(disks) {
   return out
 }
 
-// Largest set of pairwise-separated items. ponytail: brute force over bitmasks, capped at 20 items.
+// Largest set of pairwise-separated items. ponytail: brute force over bitmasks; callers must keep items <= MAX_CLIQUE_ITEMS.
+export const MAX_CLIQUE_ITEMS = 20
 export function maxSeparatedSet(items, isSep) {
-  const n = Math.min(items.length, 20)
+  const n = Math.min(items.length, MAX_CLIQUE_ITEMS)
   let best = []
   for (let mask = 1; mask < 1 << n; mask++) {
     const idx = []
@@ -50,11 +54,11 @@ export function score(ipClusters, asnClusters, vantages) {
   const disksC = (c) => c.providers.flatMap((p) => disksOf(p.obs))
   const sep = maxSeparatedSet(durable, (a, b) => separated(disksC(a), disksC(b)))
   const allProviders = ipClusters.flatMap((c) => c.providers)
-  const count = (s) => allProviders.filter((p) => p.obs.some((o) => o.status === s)).length
+  const count = (...ss) => allProviders.filter((p) => p.obs.some((o) => ss.includes(o.status))).length
   const located = vantages.filter((v) => v.lat != null).length
   return {
     advertised: allProviders.length,
-    servedValid: count('local') + count('on-demand'),
+    servedValid: count('local', 'on-demand'),
     local: count('local'),
     onDemand: count('on-demand'),
     boxes: durable.length,
@@ -64,6 +68,7 @@ export function score(ipClusters, asnClusters, vantages) {
     separateKeys: located >= 2 ? sep.map((c) => c.key) : [],
     vantages: vantages.length,
     locatedVantages: located,
+    capped: durable.length > MAX_CLIQUE_ITEMS, // provenSeparate is then a lower bound over the first MAX_CLIQUE_ITEMS boxes
   }
 }
 

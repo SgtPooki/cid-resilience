@@ -3,6 +3,28 @@
 
 export const newVantage = (label, loc) => ({ id: Math.random().toString(36).slice(2, 10), label: label || 'unnamed', lat: loc?.lat ?? null, lon: loc?.lon ?? null, ts: new Date().toISOString() })
 
+const STATUSES = new Set(['advertised', 'local', 'on-demand', 'invalid', 'unreachable'])
+const num = (x) => (typeof x === 'number' && isFinite(x) ? x : null)
+// Shared reports are untrusted input: keep only known fields with sane types, drop anything else.
+export function sanitize(r) {
+  if (!r || typeof r.cid !== 'string' || !/^[A-Za-z0-9]+$/.test(r.cid) || !r.vantage || typeof r.vantage.id !== 'string') throw new Error('malformed report')
+  const v = r.vantage
+  const lat = num(v.lat), lon = num(v.lon)
+  return {
+    v: 1, cid: r.cid, blocks: num(r.blocks) ?? 0,
+    vantage: { id: v.id.slice(0, 32), label: String(v.label ?? 'unnamed').slice(0, 40), lat: lat != null && Math.abs(lat) <= 90 ? lat : null, lon: lon != null && Math.abs(lon) <= 180 ? lon : null, ts: String(v.ts ?? '').slice(0, 40) },
+    providers: (Array.isArray(r.providers) ? r.providers : []).map((p) => ({
+      url: typeof p.url === 'string' && /^https?:\/\/[\w.-]+(:\d+)?$/.test(p.url) ? p.url : null,
+      peers: (Array.isArray(p.peers) ? p.peers : []).filter((x) => typeof x === 'string' && /^[A-Za-z0-9]+$/.test(x)).slice(0, 20),
+      ip: typeof p.ip === 'string' && /^[\d.:a-f]+$/i.test(p.ip) ? p.ip : null,
+      asn: num(p.asn), holder: p.holder == null ? null : String(p.holder).slice(0, 60), cdn: !!p.cdn,
+      status: STATUSES.has(p.status) ? p.status : 'advertised',
+      baseline: num(p.baseline), probe: num(p.probe), excess: num(p.excess), transfer: num(p.transfer), verified: num(p.verified), rounds: num(p.rounds),
+      error: p.error == null ? null : String(p.error).slice(0, 80), warmed: !!p.warmed, transport: p.transport === 'bitswap' ? 'bitswap' : undefined,
+    })).filter((p) => p.url || p.peers.length),
+  }
+}
+
 // Merge many single-vantage reports into { cid, vantages, providers:[{ url, peers, ip, asn, holder, cdn, obs:[...] }] }
 export function merge(reports) {
   const cids = new Set(reports.map((r) => r.cid))
@@ -17,13 +39,13 @@ export function merge(reports) {
       const m = providers.get(key) ?? providers.set(key, { key, url: p.url, peers: [], ip: p.ip, asn: p.asn, holder: p.holder, cdn: !!p.cdn, obs: [] }).get(key)
       for (const id of p.peers ?? []) if (!m.peers.includes(id)) m.peers.push(id)
       m.ip ??= p.ip; m.asn ??= p.asn; m.holder ??= p.holder; m.cdn ||= !!p.cdn
-      m.obs.push({ vantageId: r.vantage.id, vantage: r.vantage, status: p.status, baseline: p.baseline, probe: p.probe, excess: p.excess, verified: p.verified, rounds: p.rounds, error: p.error })
+      m.obs.push({ vantageId: r.vantage.id, vantage: r.vantage, status: p.status, baseline: p.baseline, probe: p.probe, excess: p.excess, transfer: p.transfer, verified: p.verified, rounds: p.rounds, error: p.error, warmed: p.warmed })
     }
   }
   return { cid: reports[0]?.cid, vantages, providers: [...providers.values()] }
 }
 
-const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+const b64url = (bytes) => btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 const unb64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
 
 async function pipe(bytes, stream) {
@@ -38,8 +60,9 @@ export async function encodeReports(reports) {
 
 export async function decodeReports(frag) {
   const bytes = await pipe(unb64url(frag), new DecompressionStream('deflate-raw'))
-  return JSON.parse(new TextDecoder().decode(bytes))
+  const parsed = JSON.parse(new TextDecoder().decode(bytes))
+  return (Array.isArray(parsed) ? parsed : [parsed]).map(sanitize)
 }
 
-export const shareUrl = async (base, reports) => `${base.split('#')[0]}#r=${await encodeReports(reports)}`
+export const shareUrl = async (base, reports) => `${base.split(/[#?]/)[0]}#r=${await encodeReports(reports)}` // drop ?cid&lat&auto so recipients run as themselves
 export const reportsFromUrl = async (url) => { const m = url.match(/#r=([A-Za-z0-9_-]+)/); return m ? decodeReports(m[1]) : [] }

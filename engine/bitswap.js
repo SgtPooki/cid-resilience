@@ -19,11 +19,12 @@ export function wantBlockMessage(cidBytes) {
 export function fields(buf) {
   const out = []
   let i = 0
+  const v = (at) => varint(buf, at) ?? (() => { throw new Error('truncated protobuf') })()
   while (i < buf.length) {
-    const [key, j] = varint(buf, i)
+    const [key, j] = v(i)
     const tag = key >> 3, wt = key & 7
-    if (wt === 2) { const [len, k] = varint(buf, j); out.push({ tag, bytes: buf.subarray(k, k + len) }); i = k + len }
-    else if (wt === 0) { const [num, k] = varint(buf, j); out.push({ tag, num }); i = k }
+    if (wt === 2) { const [len, k] = v(j); if (k + len > buf.length) throw new Error('truncated protobuf'); out.push({ tag, bytes: buf.subarray(k, k + len) }); i = k + len }
+    else if (wt === 0) { const [num, k] = v(j); out.push({ tag, num }); i = k }
     else throw new Error(`unsupported wire type ${wt}`)
   }
   return out
@@ -49,18 +50,20 @@ const lib = () => (libP ??= (async () => {
     import('https://cdn.jsdelivr.net/npm/multiformats@13/cid/+esm'), import('https://cdn.jsdelivr.net/npm/@libp2p/peer-id@5/+esm'),
   ])
   const helia = await createHelia({ blockBrokers: [], routers: [], libp2p: { peerDiscovery: [] } })
-  await helia.libp2p.handle(['/ipfs/bitswap/1.2.0', '/ipfs/bitswap/1.1.0', '/ipfs/bitswap/1.0.0'], ({ stream }) => {
+  await helia.libp2p.handle(['/ipfs/bitswap/1.2.0', '/ipfs/bitswap/1.1.0', '/ipfs/bitswap/1.0.0'], ({ stream, connection }) => {
     (async () => {
+      const from = connection.remotePeer.toString()
+      const mine = (w) => w && w.peer === from // only the challenged peer's own response counts, for timing and for bytes
       let buf = new Uint8Array(0)
       for await (const chunk of stream.source) {
         const t = performance.now()
-        for (const w of waiting.values()) w.ttfb ??= t - w.t0 // ponytail: one outstanding want at a time, so first byte belongs to it
+        for (const w of waiting.values()) if (mine(w)) w.ttfb ??= t - w.t0
         buf = concat(buf, chunk.subarray())
         for (let r; (r = varint(buf, 0)) && r[1] + r[0] <= buf.length;) {
           const { blocks, dontHave } = parseResponse(buf.subarray(r[1], r[1] + r[0]))
           buf = buf.subarray(r[1] + r[0])
-          for (const b of blocks) { const w = waiting.get(await sha256hex(b)); if (w) w.resolve({ ttfb: w.ttfb, ok: true }) }
-          for (const c of dontHave) { const w = waiting.get(cidDigestHex(c)); if (w) w.resolve({ ttfb: w.ttfb, ok: false, error: 'DONT_HAVE' }) }
+          for (const b of blocks) { const w = waiting.get(await sha256hex(b)); if (mine(w)) w.resolve({ ttfb: w.ttfb, ok: true }) }
+          for (const c of dontHave) { const w = waiting.get(cidDigestHex(c)); if (mine(w)) w.resolve({ ttfb: w.ttfb, ok: false, error: 'DONT_HAVE' }) }
         }
       }
     })().catch(() => {})
@@ -73,9 +76,10 @@ const cidDigestHex = (cidBytes) => cidBytes && hex(cidBytes.subarray(cidBytes.le
 
 async function wantBlock(libp2p, pid, cid, timeoutMs = 15000) {
   const key = hex(cid.multihash.digest)
+  if (waiting.has(key)) throw new Error('bitswap probes must run one at a time') // index.js serialises them
   return new Promise(async (resolve, reject) => {
     const timer = setTimeout(() => { waiting.delete(key); resolve({ ok: false, error: 'timeout' }) }, timeoutMs)
-    waiting.set(key, { t0: performance.now(), resolve: (r) => { clearTimeout(timer); waiting.delete(key); resolve(r) } })
+    waiting.set(key, { t0: performance.now(), peer: pid.toString(), resolve: (r) => { clearTimeout(timer); waiting.delete(key); resolve(r) } })
     try {
       const stream = await libp2p.dialProtocol(pid, ['/ipfs/bitswap/1.2.0', '/ipfs/bitswap/1.1.0'], { signal: AbortSignal.timeout(timeoutMs) })
       await stream.sink((async function* () { yield wantBlockMessage(cid.bytes) })())

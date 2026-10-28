@@ -34,11 +34,12 @@ export async function run(cid, { vantage, rounds = 5, maxExcessMs = 30, concurre
   } else {
     onEvent({ type: 'dag', blocks: dag.blocks.length, from: dag.from })
     const queue = [...providers]
+    let bsLock = Promise.resolve() // bitswap probes run one at a time so responses are attributable
     const worker = async () => {
       for (let p; (p = queue.shift());) {
         if (p.url && !p.url.startsWith('https') && mixedContent) Object.assign(p, { status: 'unreachable', error: 'http endpoint blocked from an https page' })
-        else if (p.url) Object.assign(p, await challenge(p.url, dag.blocks, { rounds, maxExcessMs, fetchFn }))
-        else if (bitswapProbe) Object.assign(p, await bitswapProbe(p, dag.blocks, { rounds, maxExcessMs }))
+        else if (p.url) Object.assign(p, await challenge(p.url, dag.blocks, { rounds, maxExcessMs, fetchFn }), { warmed: p.url === dag.from || undefined })
+        else if (bitswapProbe) Object.assign(p, await (bsLock = bsLock.then(() => bitswapProbe(p, dag.blocks, { rounds, maxExcessMs }))))
         else Object.assign(p, { status: 'unreachable', error: 'bitswap-only peer, no probe available here' })
         onEvent({ type: 'provider', provider: p })
       }

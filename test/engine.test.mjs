@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { varint, base32, parseCar, parseCarChunk, sha256hex, concat } from '../engine/car.js'
+import { varint, base32, parseCar, parseCarChunk, sha256hex, concat, cidDigest } from '../engine/car.js'
 import { protocolsFromMetadata, httpUrl, endpoints } from '../engine/discover.js'
-import { challenge, median } from '../engine/probe.js'
-import { haversineKm, disjoint, separated, maxSeparatedSet, score, radiusKm, inconsistencies } from '../engine/score.js'
+import { challenge, median, fetchBlocks, pick } from '../engine/probe.js'
+import { haversineKm, disjoint, separated, maxSeparatedSet, score, radiusKm, inconsistencies, KM_PER_MS, LOCATION_SLACK_KM } from '../engine/score.js'
 import { merge, encodeReports, decodeReports } from '../engine/report.js'
 import { wantBlockMessage, parseResponse } from '../engine/bitswap.js'
 
@@ -58,6 +58,23 @@ test('CIDv0 sections parse', () => {
   const car = Uint8Array.from([1, 0xa0, ...uvarint(sec.length), ...sec])
   const [b] = parseCar(car)
   assert.equal(b.mhCode, 0x12); assert.equal(b.size, 1); assert.equal(b.digest, '01'.repeat(32))
+  assert.throws(() => parseCar(Uint8Array.from([1, 0xa0, 5, 0x12, 0x20, 1, 1, 1])), /overruns/) // CID longer than its section
+})
+
+test('cidDigest decodes CIDv0 and base32 CIDv1 to the same digest', () => {
+  const v0 = cidDigest('QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB')
+  const v1 = cidDigest('bafybeiasb5vpmaounyilfuxbd3lryvosl4yefqrfahsb2esg46q6tu6y5q') // v0 re-encoded as base32 CIDv1 with python base64.b32encode
+  assert.equal(v0.digest, v1.digest); assert.equal(v0.mhCode, 0x12)
+  assert.throws(() => cidDigest('zdj7Wd'), /unsupported/)
+})
+
+test('fetchBlocks rejects a CAR whose root is not the requested CID', async () => {
+  const { car } = await carFor([new TextEncoder().encode('hello')])
+  const other = 'bafybeiasb5vpmaounyilfuxbd3lryvosl4yefqrfahsb2esg46q6tu6y5q'
+  const fetchFn = async () => new Response(car)
+  await assert.rejects(fetchBlocks(other, ['https://g'], { fetchFn }), /root is not the requested CID/)
+  const ok = await fetchBlocks('bafkreibm6jg3ux5qumhcn2b3flc3tyu6dmlb4xa7u5bf44yegnrjhc4yeq', ['https://g'], { fetchFn })
+  assert.equal(ok.blocks.length, 1); assert.equal(ok.from, 'https://g')
 })
 
 test('IPNI metadata and multiaddr parsing', () => {
@@ -96,14 +113,19 @@ test('challenge classifies local, on-demand, invalid, unreachable', async () => 
   assert.equal((await challenge('http://h', blocks, { ...opts, ...fakeGateway({}, {}) })).status, 'invalid')
   assert.equal((await challenge('http://h', blocks, { ...opts, fetchFn: async () => { throw new Error('boom') } })).status, 'unreachable')
   assert.equal(median([3, 1, 2]), 2)
+  assert.deepEqual(pick([1, 2, 3, 4], 2, () => 0), [1, 2]) // rand=0 keeps order; samples without replacement
+  assert.deepEqual(pick([1, 2, 3], 5, () => 0.99), [3, 1, 2])
 })
 
 test('distance bounds and separation', () => {
   const nyc = { lat: 40.71, lon: -74.01 }, lon = { lat: 51.51, lon: -0.13 }
   assert.ok(Math.abs(haversineKm(nyc, lon) - 5570) < 30)
-  assert.equal(radiusKm(10), 1000)
+  assert.equal(radiusKm(10), 10 * KM_PER_MS + LOCATION_SLACK_KM)
+  assert.ok(KM_PER_MS >= 299792.458 / 1.4682 / 2 / 1000, 'constant must not be below the fibre bound (G 10a)')
   assert.ok(disjoint({ ...nyc, r: 1000 }, { ...lon, r: 1000 }))
   assert.ok(!disjoint({ ...nyc, r: 3000 }, { ...lon, r: 3000 }))
+  const half = haversineKm(nyc, lon) / 2
+  assert.ok(!disjoint({ ...nyc, r: half }, { ...lon, r: half }), 'touching disks are not disjoint')
   // provider A near NYC (10 ms from nyc), B near London: two vantages prove them apart
   const obsA = [{ vantage: nyc, baseline: 10, status: 'local' }, { vantage: lon, baseline: 80, status: 'local' }]
   const obsB = [{ vantage: nyc, baseline: 80, status: 'local' }, { vantage: lon, baseline: 10, status: 'local' }]
@@ -118,6 +140,7 @@ test('maxSeparatedSet is the largest pairwise-separated subset', () => {
   const sep = (a, b) => Math.abs(a - b) >= 2
   assert.deepEqual(maxSeparatedSet([1, 2, 3, 5, 7], sep), [1, 3, 5, 7])
   assert.deepEqual(maxSeparatedSet([], sep), [])
+  assert.equal(maxSeparatedSet(Array.from({ length: 25 }, (_, i) => i * 10), sep).length, 20) // capped: callers report score.capped
 })
 
 test('score counts failure domains, not providers; needs two located vantages', () => {
@@ -130,9 +153,10 @@ test('score counts failure domains, not providers; needs two located vantages', 
     { key: 'w', cdn: false, providers: [p('on-demand', 10, 'on-demand', 10)] },
   ]
   const ops = [{ key: 'op', cdn: false, providers: [...cl[0].providers, ...cl[1].providers] }, cl[2], cl[3]]
+  cl[3].providers[0].obs[0].status = 'local' // local from one vantage, on-demand from the other: counted once as served valid
   const s = score(cl, ops, [v1, v2])
-  assert.equal(s.advertised, 5); assert.equal(s.local, 4); assert.equal(s.onDemand, 1)
-  assert.equal(s.boxes, 2); assert.equal(s.operators, 1); assert.equal(s.cdnClusters, 1); assert.equal(s.provenSeparate, 2)
+  assert.equal(s.advertised, 5); assert.equal(s.servedValid, 5); assert.equal(s.local, 5); assert.equal(s.onDemand, 1); assert.equal(s.capped, false)
+  assert.equal(s.boxes, 3); assert.equal(s.operators, 2); assert.equal(s.cdnClusters, 1); assert.equal(s.provenSeparate, 2)
   assert.equal(score(cl, ops, [v1]).provenSeparate, 0)
   assert.equal(score(cl, ops, [v1, { id: 'c', lat: null, lon: null }]).provenSeparate, 0)
 })
@@ -152,7 +176,14 @@ test('merge + fragment round trip', async () => {
   assert.equal(merge([r1, r3]).providers.length, 2)
   const frag = await encodeReports([r1, r2])
   assert.match(frag, /^[A-Za-z0-9_-]+$/)
-  assert.deepEqual(await decodeReports(frag), [r1, r2])
+  const back = await decodeReports(frag)
+  assert.equal(back.length, 2)
+  assert.equal(back[0].providers[0].url, 'https://x'); assert.equal(back[0].providers[0].baseline, 10); assert.equal(back[1].vantage.label, 'lon')
+  // untrusted input: bad url scheme, unknown status and html in labels are dropped or neutralised
+  const evil = { ...r1, vantage: { ...r1.vantage, label: '<img src=x onerror=1>' }, providers: [{ url: 'javascript:alert(1)', peers: ['P'], status: 'pwned', baseline: 'NaN' }] }
+  const [san] = await decodeReports(await encodeReports([evil]))
+  assert.equal(san.providers[0].url, null); assert.equal(san.providers[0].status, 'advertised'); assert.equal(san.providers[0].baseline, null)
+  await assert.rejects(decodeReports(await encodeReports([{ nope: 1 }])), /malformed/)
 })
 
 test('bitswap want-block message encodes as length-prefixed protobuf', () => {
@@ -172,4 +203,6 @@ test('bitswap response parsing: payload blocks and DontHave presences', () => {
   const r = parseResponse(msg)
   assert.deepEqual([...r.blocks[0]], [1, 2, 3])
   assert.deepEqual([...r.dontHave[0]], [...cid])
+  assert.deepEqual([...parseResponse(Uint8Array.of(0x12, 2, 7, 8)).blocks[0]], [7, 8]) // bitswap 1.0 raw block
+  assert.throws(() => parseResponse(Uint8Array.of(0x1a, 50, 1)), /truncated/)
 })

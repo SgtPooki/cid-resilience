@@ -1,4 +1,4 @@
-import { run, analyze, newVantage, withinKm, radiusKm, disksOf, inconsistencies, shareUrl, reportsFromUrl } from './engine/index.js'
+import { run, analyze, newVantage, withinKm, radiusKm, disksOf, inconsistencies, shareUrl, reportsFromUrl, sanitize } from './engine/index.js'
 
 const $ = (id) => document.getElementById(id)
 let reports = [], providers = new Map(), running = false
@@ -14,13 +14,17 @@ function renderLive() {
   $('rows').innerHTML = [...providers.values()].map((p) => row(p, [{ vantage: current, status: p.status, baseline: p.baseline, excess: p.excess, verified: p.verified, rounds: p.rounds, error: p.error }])).join('')
 }
 
+const STATUS = new Set(['advertised', 'local', 'on-demand', 'invalid', 'unreachable'])
+const st = (s) => (STATUS.has(s) ? s : 'advertised')
+const safeHttp = (u) => (typeof u === 'string' && /^https?:\/\/[\w.-]+(:\d+)?$/.test(u) ? u : null)
 function row(p, obs) {
   const ob = obs[0]
-  const where = p.url ? `<a href="${esc(p.url)}/ipfs/bafkqaaa" class="mono">${esc(p.url)}</a>` : `<span class="mono">${esc(p.peers?.[0])}</span> <span class="tag">bitswap</span>`
-  const op = [p.ip, p.holder ? `AS${p.asn} ${p.holder}` : p.asn ? `AS${p.asn}` : ''].filter(Boolean).join('<br>') + (p.cdn ? ' <span class="tag">cdn</span>' : '')
+  const url = safeHttp(p.url)
+  const where = url ? `<a href="${esc(url)}/ipfs/bafkqaaa" class="mono">${esc(url)}</a>` : `<span class="mono">${esc(p.peers?.[0])}</span> <span class="tag">bitswap</span>`
+  const op = [esc(p.ip), p.holder ? esc(`AS${p.asn} ${p.holder}`) : p.asn ? esc(`AS${p.asn}`) : ''].filter(Boolean).join('<br>') + (p.cdn ? ' <span class="tag">cdn</span>' : '') + (obs.some((o) => o.warmed) ? ' <span class="tag" title="served the sample CAR first, so its cache was warm before the challenge">warmed</span>' : '')
   const km = obs.filter((o) => o.status === 'local' && o.vantage?.lat != null).map((o) => `${fmt(radiusKm(o.baseline))}`).join(' / ')
-  const seen = obs.map((o) => `<span class="${o.status}">${esc(o.vantage?.label ?? '?')}: ${o.status}${o.error ? ` (${esc(o.error)})` : ''}</span>`).join('<br>')
-  return `<tr><td class="${ob.status}">${ob.status}</td><td>${where}<br><small>${(p.peers ?? []).length} peer id${p.peers?.length === 1 ? '' : 's'}</small></td><td>${op}</td><td class="n">${fmt(ob.baseline)}</td><td class="n">${fmt(ob.excess)}</td><td class="n">${ob.verified != null ? `${ob.verified}/${ob.rounds}` : ''}</td><td class="n">${km}</td><td>${seen}</td></tr>`
+  const seen = obs.map((o) => `<span class="${st(o.status)}">${esc(o.vantage?.label ?? '?')}: ${st(o.status)}${o.error ? ` (${esc(o.error)})` : ''}</span>`).join('<br>')
+  return `<tr><td class="${st(ob.status)}">${st(ob.status)}</td><td>${where}<br><small>${(p.peers ?? []).length} peer id${p.peers?.length === 1 ? '' : 's'}</small></td><td>${op}</td><td class="n">${fmt(ob.baseline)}</td><td class="n">${fmt(ob.excess)}</td><td class="n">${ob.verified != null ? `${fmt(ob.verified)}/${fmt(ob.rounds)}` : ''}</td><td class="n">${km}</td><td>${seen}</td></tr>`
 }
 
 function renderMerged() {
@@ -41,16 +45,16 @@ function renderMerged() {
     ? [500, 1000, 3000].map((km) => `<b>${withinKm(merged.providers, me.id, km)}</b> local copies within ${km} km of ${esc(me.label)}`).join(' · ')
     : 'Add a location to see "N copies within X km of you".'
   $('sepnote').textContent = s.locatedVantages >= 2
-    ? `Resilience score: ${s.provenSeparate} independent failure domain${s.provenSeparate === 1 ? '' : 's'} proven apart (${s.operators} operators, ${s.boxes} boxes seen). Vantage locations are self-reported.`
+    ? `Resilience score: ${s.provenSeparate} independent failure domain${s.provenSeparate === 1 ? '' : 's'} proven apart (${s.operators} operators, ${s.boxes} boxes seen${s.capped ? '; only the first 20 boxes were searched, so this is a lower bound' : ''}). Vantage locations are self-reported.`
     : `Resilience score needs reports from two located vantages. From one vantage every disk contains you, so nothing can be proven apart. Conservative count: ${s.operators} operators.`
   $('rows').innerHTML = merged.providers
     .toSorted((a, b) => rank(a) - rank(b))
     .map((p) => row(p, p.obs).replace('<tr>', `<tr${boxes.find((c) => c.providers.includes(p) && sepIds.has(c.key)) ? ' style="outline:1px solid var(--ok)"' : ''}>`)).join('')
-  $('vantages').innerHTML = merged.vantages.map((v) => `<li>${esc(v.label)} ${v.lat != null ? `(${v.lat}, ${v.lon})` : '(no location)'} <small>${esc(v.ts)} · self-reported</small></li>`).join('')
+  $('vantages').innerHTML = merged.vantages.map((v) => `<li>${esc(v.label)} ${v.lat != null ? `(${fmt(v.lat * 10) / 10}, ${fmt(v.lon * 10) / 10})` : '(no location)'} <small>${esc(v.ts)} · self-reported</small></li>`).join('')
   const bad = []
   for (const p of merged.providers) {
     const obs = p.obs.filter((o) => o.status === 'local' && o.vantage?.lat != null)
-    for (const [i, j] of inconsistencies(disksOf(obs))) bad.push(`${esc(obs[i].vantage.label)} and ${esc(obs[j].vantage.label)} give disjoint disks for ${esc(p.url ?? p.peers[0])}: one of them is mislocated or lying`)
+    for (const [i, j] of inconsistencies(disksOf(obs))) bad.push(`${esc(obs[i].vantage.label)} and ${esc(obs[j].vantage.label)} give disjoint disks for ${esc(p.url ?? p.peers[0])}: a vantage is mislocated or lying, or this IP is anycast served from several sites`)
   }
   $('incons').innerHTML = bad.join('<br>')
   shareUrl(location.href, reports).then((u) => { $('share').value = u; history.replaceState(null, '', u) })
@@ -95,9 +99,11 @@ $('download').onclick = () => {
 $('mergebtn').onclick = async () => {
   const t = $('paste').value.trim()
   try {
-    const incoming = t.startsWith('[') || t.startsWith('{') ? [JSON.parse(t)].flat() : await reportsFromUrl(t)
+    const incoming = (t.startsWith('[') || t.startsWith('{') ? [JSON.parse(t)].flat().map(sanitize) : await reportsFromUrl(t))
     if (!incoming.length) throw new Error('no reports found')
-    reports = [...reports, ...incoming]
+    const candidate = [...reports, ...incoming]
+    analyze(candidate) // throws on mixed CIDs; only commit state if it merges
+    reports = candidate
     if (!$('cid').value) $('cid').value = incoming[0].cid
     renderMerged(); $('paste').value = ''
   } catch (e) { $('status').textContent = `merge failed: ${e.message}` }
