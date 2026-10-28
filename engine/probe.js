@@ -1,0 +1,77 @@
+// Timed challenges over the trustless gateway. Sources: G 3a, 3c, 10b.
+import { parseCarChunk, concat, sha256hex } from './car.js'
+
+export const IDENTITY = 'bafkqaaa' // G 3c: liveness + RTT baseline only
+export const median = (xs) => xs.length ? xs.toSorted((a, b) => a - b)[Math.floor(xs.length / 2)] : null
+
+// Fetch up to maxBlocks of the DAG as a CAR from any endpoint, verifying each block hash.
+// ponytail: blocks are hash-checked but DAG membership is not (would need dag-pb/cbor decoding); the root must come first.
+export async function fetchBlocks(cid, urls, { maxBlocks = 64, timeoutMs = 30000, fetchFn = fetch } = {}) {
+  for (const base of urls) {
+    const ctl = new AbortController()
+    const t = setTimeout(() => ctl.abort(), timeoutMs)
+    try {
+      const r = await fetchFn(`${base}/ipfs/${cid}?format=car`, { headers: { accept: 'application/vnd.ipld.car' }, signal: ctl.signal })
+      if (!r.ok) continue
+      const reader = r.body.getReader()
+      let buf = new Uint8Array(0), state = { headerDone: false }
+      const blocks = []
+      while (blocks.length < maxBlocks) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buf = concat(buf, value)
+        const out = parseCarChunk(buf, state)
+        buf = out.rest
+        for (const b of out.blocks) {
+          if (b.mhCode === 0x12 && (await sha256hex(b.bytes)) !== b.digest) throw new Error(`bad block from ${base}`)
+          blocks.push({ cid: b.cid, mhCode: b.mhCode, digest: b.digest, size: b.size })
+        }
+      }
+      ctl.abort()
+      if (!blocks.length) continue
+      return { blocks, from: base } // blocks[0] is the root in a spec-conformant CAR response
+    } catch (e) {
+      if (e.message?.startsWith('bad block')) throw e
+    } finally { clearTimeout(t) }
+  }
+  return null
+}
+// Time to first byte + body. -> { ttfb, total, ok, status, body }
+export async function timedGet(base, cid, { timeoutMs = 15000, fetchFn = fetch } = {}) {
+  const t0 = performance.now()
+  const r = await fetchFn(`${base}/ipfs/${cid}?format=raw`, { headers: { accept: 'application/vnd.ipld.raw' }, signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' })
+  const ttfb = performance.now() - t0
+  const body = new Uint8Array(await r.arrayBuffer())
+  return { ttfb, total: performance.now() - t0, ok: r.ok, status: r.status, body }
+}
+
+export const pick = (blocks, n, rand = Math.random) => blocks.toSorted(() => rand() - 0.5).slice(0, n)
+
+// Classify one endpoint. -> { status: 'local'|'on-demand'|'invalid'|'unreachable', baseline, probe, excess, verified, rounds, error? }
+export async function challenge(base, blocks, { rounds = 5, maxExcessMs = 30, fetchFn = fetch, timeoutMs = 15000 } = {}) {
+  const opts = { fetchFn, timeoutMs }
+  try {
+    const warm = await timedGet(base, IDENTITY, opts)
+    if (!warm.ok) return { status: 'unreachable', error: `bafkqaaa ${warm.status}` }
+    const picks = pick(blocks.filter((b) => b.mhCode === 0x12), rounds)
+    if (!picks.length) return { status: 'invalid', error: 'no sha256 blocks to challenge' }
+    const baseline = [], probe = []
+    let verified = 0, failed = []
+    for (let k = 0; k < picks.length; k++) baseline.push((await timedGet(base, IDENTITY, opts)).ttfb)
+    for (const b of picks) {
+      const r = await timedGet(base, b.cid, opts)
+      probe.push(r.ttfb)
+      const h = r.ok ? await sha256hex(r.body) : null
+      if (h && h === b.digest) verified++
+      else failed.push({ cid: b.cid, status: r.status })
+    }
+    const excess = median(probe) - median(baseline)
+    const allValid = verified === picks.length
+    return {
+      status: !allValid ? 'invalid' : excess < maxExcessMs ? 'local' : 'on-demand',
+      baseline: median(baseline), probe: median(probe), excess, verified, rounds: picks.length, failed,
+    }
+  } catch (err) {
+    return { status: 'unreachable', error: err.cause?.code ?? err.name ?? String(err) }
+  }
+}
