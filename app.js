@@ -148,7 +148,8 @@ $('run').onclick = async () => {
       onEvent: (e) => {
         if (e.type === 'discovered') { total = e.endpoints + e.bitswapPeers; $('status').textContent = `${e.peers} providers claim to hold it (${e.endpoints} over HTTP, ${e.bitswapPeers} over bitswap only)${Object.keys(e.errors).length ? `; one index did not answer (${Object.keys(e.errors).join(', ')})` : ''}. Downloading a sample of the content...` }
         if (e.type === 'dag') $('status').textContent = e.blocks ? `Got ${e.blocks} piece${e.blocks === 1 ? '' : 's'} of the content from ${e.from}. Now fetching random pieces from every provider and timing the answers; this takes a minute or two.${e.blocks < 3 ? ' This content has fewer than 3 pieces, so each provider gets one test and timing is marked weak.' : ''}` : 'No provider served the content, so nothing can be tested.'
-        if (e.type === 'provider') { providers.set(e.provider.url ?? e.provider.peers[0], e.provider); renderLive() }
+        if (e.type === 'provider') { providers.set(e.provider.url ?? e.provider.peers[0], e.provider); if (running) renderLive() }
+        if (e.type === 'annotated' && reports.includes(e.report)) { renderMerged(); saveState() }
       },
     })
     reports = reports.filter((r) => r.cid === cid && r.vantage.id !== current.id).concat(report)

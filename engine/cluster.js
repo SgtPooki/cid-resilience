@@ -6,7 +6,7 @@ const isIp = (h) => /^\d+\.\d+\.\d+\.\d+$/.test(h) || h.includes(':')
 
 export async function resolveIp(host, { fetchFn = fetch } = {}) {
   if (isIp(host)) return host
-  const r = await fetchFn(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=A`, { headers: { accept: 'application/dns-json' } })
+  const r = await fetchFn(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=A`, { headers: { accept: 'application/dns-json' }, signal: AbortSignal.timeout(8000) })
   const j = await r.json()
   return j.Answer?.find((a) => a.type === 1)?.data ?? null
 }
@@ -15,12 +15,12 @@ const asnCache = new Map()
 export async function asnOf(ip, { fetchFn = fetch } = {}) {
   if (asnCache.has(ip)) return asnCache.get(ip)
   const p = (async () => {
-    const r = await fetchFn(`https://stat.ripe.net/data/network-info/data.json?resource=${ip}`)
+    const r = await fetchFn(`https://stat.ripe.net/data/network-info/data.json?resource=${ip}`, { signal: AbortSignal.timeout(8000) })
     const j = await r.json()
     const asn = Number(j.data?.asns?.[0]) || null
     let holder = asn && CDN_ASNS.get(asn)
     if (asn && !holder) {
-      holder = await fetchFn(`https://stat.ripe.net/data/as-overview/data.json?resource=AS${asn}`).then((r) => r.json()).then((j) => j.data?.holder).catch(() => null)
+      holder = await fetchFn(`https://stat.ripe.net/data/as-overview/data.json?resource=AS${asn}`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).then((j) => j.data?.holder).catch(() => null)
     }
     return { asn, prefix: j.data?.prefix ?? null, holder: holder ?? null, cdn: CDN_ASNS.has(asn) }
   })().catch(() => ({ asn: null, prefix: null, holder: null, cdn: false }))

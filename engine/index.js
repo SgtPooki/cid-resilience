@@ -46,9 +46,11 @@ export async function run(cid, { vantage, rounds = 5, maxExcessMs = 30, concurre
     }
     await Promise.all(Array.from({ length: concurrency }, worker))
   }
-  await annotated
-  const report = { v: 1, cid, vantage, blocks: dag?.blocks.length ?? 0, providers: providers.map(({ addrs, failed, ...p }) => p) }
+  // Report goes out as soon as probing ends; IP/ASN annotations land in the same objects and are announced when ready.
+  for (const p of providers) { delete p.addrs; delete p.failed }
+  const report = { v: 1, cid, vantage, blocks: dag?.blocks.length ?? 0, providers }
   onEvent({ type: 'done', report })
+  annotated.then(() => onEvent({ type: 'annotated', report }))
   return report
 }
 
