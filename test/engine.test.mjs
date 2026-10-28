@@ -75,6 +75,10 @@ test('fetchBlocks rejects a CAR whose root is not the requested CID', async () =
   await assert.rejects(fetchBlocks(other, ['https://g'], { fetchFn }), /root is not the requested CID/)
   const ok = await fetchBlocks('bafkreibm6jg3ux5qumhcn2b3flc3tyu6dmlb4xa7u5bf44yegnrjhc4yeq', ['https://g'], { fetchFn })
   assert.equal(ok.blocks.length, 1); assert.equal(ok.from, 'https://g')
+  // strict cap: a CAR delivered in one chunk with more blocks than maxBlocks yields exactly maxBlocks
+  const many = await carFor(Array.from({ length: 5 }, (_, i) => Uint8Array.of(i)))
+  const capped = await fetchBlocks(many.cids[0], ['https://g'], { fetchFn: async () => new Response(many.car), maxBlocks: 3 })
+  assert.equal(capped.blocks.length, 3)
 })
 
 test('IPNI metadata and multiaddr parsing', () => {

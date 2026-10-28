@@ -35,18 +35,18 @@
 </head>
 <body>
 <h1>CID resilience</h1>
-<p><b>Paste a content ID, get a count of real, independent copies.</b> The page asks the public IPFS index who claims to hold the content, downloads a few pieces from each of them, checks the bytes, and times the answers to tell a <b class="local">local copy</b> (served from that provider's own storage) from one <b class="on-demand">fetched on demand</b> (relayed from somewhere else). Free, no account, nothing stored on any server. <a href="https://github.com/SgtPooki/cid-resilience#readme">What it measures and what it can't</a>.</p>
+<p><b>Paste a content ID, get a count of real, independent copies.</b> The page asks the public IPFS index who claims to hold the content, downloads a few pieces from each of them, checks the bytes, and times the answers to class each answer as a <b class="local">local copy</b> (as fast as the provider's own no-op reply) or <b class="on-demand">fetched on demand</b> (measurably slower, probably relayed). Free, no account, nothing stored on any server. <a href="https://github.com/SgtPooki/cid-resilience#readme">What it measures and what it can't</a>.</p>
 <details><summary>Words used on this page</summary>
   <ul class="gloss">
     <li><b>CID</b>: content identifier, the hash-based name of a file or folder on IPFS (the public peer-to-peer file network). Pasting one tells the page what to look for.</li>
     <li><b>provider</b>: a server that told the public index (IPNI) it holds the CID. "Advertised" means listed there; it says nothing about whether it really has the bytes.</li>
-    <li><b>local copy / on demand</b>: a provider that answered a random piece as fast as it answers an empty request is counted as holding the bytes itself; one that was measurably slower probably fetched them from elsewhere first.</li>
+    <li><b>local copy / on demand</b>: a provider that answered a random piece within 30 ms of how fast it answers an empty request is classed local; one that was 30 ms or more slower is classed on demand. These are latency classes, evidence rather than proof of where the bytes came from.</li>
     <li><b>vantage</b>: the place you measure from, i.e. this browser. Your label and coordinates are attached to your results so that results from different places can be merged.</li>
     <li><b>box / network</b>: providers sharing one IP address are one box; providers in one network (an ASN, the number that identifies a hosting company's network) are one operator. Two boxes 1 km apart are not independent, which is why distance matters.</li>
     <li><b>baseline / excess</b>: the baseline is how long the provider takes to answer an empty request (a "no-op"); excess is how much longer a real piece took. Large excess means the piece was fetched from somewhere else first.</li>
-    <li><b>weak timing</b>: the content had fewer than 3 pieces, so each provider got a single test instead of several; treat local/on-demand as a hint, not a verdict. <b>warmed</b>: that provider served the sample first, so its cache was already warm when tested.</li>
+    <li><b>weak timing</b>: fewer than 3 test pairs were possible (the content has fewer than 3 pieces) or the result was noisier than the signal; treat local/on-demand as a hint, not a verdict. <b>warmed</b>: that provider served the sample first, so its cache was already warm when tested.</li>
     <li><b>self-reported</b>: the label and coordinates attached to a result are whatever the person who measured typed in; nothing checks them.</li>
-    <li><b>proven apart</b>: light in fibre travels about 100 km per millisecond of round trip, so each measured delay bounds how far a provider can be from you. Two providers whose bounds from two different places cannot overlap are proven to sit in different locations.</li>
+    <li><b>proven apart</b>: light in fibre travels about 102 km per millisecond of round trip, so each measured delay bounds how far a responder can be from you, assuming no faster-than-fibre links. Two responders whose bounds from two different places cannot overlap are proven to sit in different locations; what sits behind each responder is not proven.</li>
     <li><b>CDN</b>: a content delivery network edge that caches whatever was recently requested; fast, but not durable storage.</li>
   </ul>
 </details>
@@ -93,7 +93,7 @@
     <thead><tr><th>status</th><th>endpoint</th><th>IP / operator</th><th class="n">baseline ms</th><th class="n">excess ms</th><th class="n">verified</th><th class="n">≤ km away</th><th>seen from</th></tr></thead>
     <tbody id="rows"></tbody>
   </table></div>
-  <p><small>"≤ km away" is 102 km per ms of baseline round trip plus 11 km, an upper bound on the responder's distance from that vantage (light in fibre), capped at half the Earth. It is not an estimate of where the responder is. One vantage can never prove two providers are apart; two vantages with non-overlapping disks can. "untested" means no probe ran from that vantage, not that the provider is down.</small></p>
+  <p><small>"≤ km away" is 102.1 km per ms of baseline round trip plus 11 km, capped at half the Earth: an upper bound on the responder's distance from that vantage if paths are fibre or slower. It is not an estimate of where the responder is. One vantage can never prove two providers are apart; two vantages with non-overlapping disks can. "untested" means no probe ran from that vantage, not that the provider is down.</small></p>
 
   <div id="final2" hidden>
   <h2>Vantages</h2>

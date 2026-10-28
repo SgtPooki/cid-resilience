@@ -25,6 +25,7 @@ export async function fetchBlocks(cid, urls, { maxBlocks = 64, timeoutMs = 30000
         const out = parseCarChunk(buf, state)
         buf = out.rest
         for (const b of out.blocks) {
+          if (blocks.length >= maxBlocks) break
           if (b.mhCode === 0x12 && (await sha256hex(b.bytes)) !== b.digest) throw new Error(`bad block from ${base}`)
           if (!blocks.length && b.digest !== root.digest) throw new Error(`bad block from ${base}: CAR root is not the requested CID`)
           if (!blocks.some((x) => x.digest === b.digest)) blocks.push({ cid: b.cid, mhCode: b.mhCode, digest: b.digest, size: b.size })
