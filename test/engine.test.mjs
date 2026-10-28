@@ -158,6 +158,7 @@ test('score counts failure domains, not providers; needs two located vantages', 
   assert.equal(s.advertised, 5); assert.equal(s.servedValid, 5); assert.equal(s.local, 5); assert.equal(s.onDemand, 1); assert.equal(s.capped, false)
   assert.equal(s.boxes, 3); assert.equal(s.operators, 2); assert.equal(s.cdnClusters, 1); assert.equal(s.provenSeparate, 2)
   assert.equal(score(cl, ops, [v1]).provenSeparate, 0)
+  assert.equal(score([cl[0]], [ops[0]], [v1, v2]).provenSeparate, 0) // a lone box is never 'proven apart'
   assert.equal(score(cl, ops, [v1, { id: 'c', lat: null, lon: null }]).provenSeparate, 0)
 })
 

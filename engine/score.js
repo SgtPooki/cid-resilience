@@ -65,8 +65,8 @@ export function score(ipClusters, asnClusters, vantages) {
     boxes: durable.length,
     operators: asnClusters.filter(hasLocal).length,
     cdnClusters: ipClusters.filter((c) => c.cdn).length,
-    provenSeparate: located >= 2 ? sep.length : 0,
-    separateKeys: located >= 2 ? sep.map((c) => c.key) : [],
+    provenSeparate: located >= 2 && sep.length >= 2 ? sep.length : 0, // one box is vacuously 'pairwise separated'
+    separateKeys: located >= 2 && sep.length >= 2 ? sep.map((c) => c.key) : [],
     vantages: vantages.length,
     locatedVantages: located,
     capped: durable.length > MAX_CLIQUE_ITEMS, // provenSeparate is then a lower bound over the first MAX_CLIQUE_ITEMS boxes
@@ -79,9 +79,9 @@ export const withinKm = (providers, vantageId, km) =>
 
 // Headline grade from a score. Levels: none < single < unproven < proven.
 export function grade(s) {
-  if (!s.local) return { level: 'none', headline: s.servedValid ? 'No local copies observed: every provider that answered was slower than its baseline by more than the threshold' : 'No verified copies observed (unreachable providers may still hold one)' }
+  if (!s.local) return { level: 'none', headline: s.servedValid ? 'No local copies observed: every provider that answered was slower than its baseline by more than the threshold' : s.advertised ? 'No verified copies observed (unreachable providers may still hold one)' : 'Nobody advertises this CID. If you expected copies, check the CID for a typo' }
   if (s.boxes <= 1) return { level: 'single', headline: 'Single point of failure: only one box (IP) observed with a local copy' }
-  if (s.locatedVantages < 2) return { level: 'unproven', headline: `${s.operators} network${s.operators === 1 ? '' : 's'} on ${s.boxes} boxes, separation unproven (needs a second located vantage)` }
-  if (s.provenSeparate < 2) return { level: 'unproven', headline: `${s.operators} network${s.operators === 1 ? '' : 's'} on ${s.boxes} boxes, but no two proven apart` }
+  if (s.locatedVantages < 2) return { level: 'unproven', headline: `${s.local} local cop${s.local === 1 ? 'y' : 'ies'} on ${s.boxes} boxes in ${s.operators} network${s.operators === 1 ? '' : 's'}; whether they are far apart needs a measurement from a second location` }
+  if (s.provenSeparate < 2) return { level: 'unproven', headline: `${s.local} local cop${s.local === 1 ? 'y' : 'ies'} on ${s.boxes} boxes in ${s.operators} network${s.operators === 1 ? '' : 's'}, but no two could be proven far apart` }
   return { level: 'proven', headline: `${s.provenSeparate} responders proven geographically apart${s.capped ? ' (at least)' : ''}` }
 }

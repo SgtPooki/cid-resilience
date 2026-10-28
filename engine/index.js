@@ -5,6 +5,7 @@ import { annotate, clusters, operatorKey } from './cluster.js'
 import { merge } from './report.js'
 import { score } from './score.js'
 
+export * from './car.js'
 export * from './discover.js'
 export * from './probe.js'
 export * from './cluster.js'
@@ -23,8 +24,7 @@ export async function run(cid, { vantage, rounds = 5, maxExcessMs = 30, concurre
   const providers = eps.map((e) => ({ url: e.url, peers: e.peers, status: 'advertised' }))
   for (const p of bs) providers.push({ url: null, peers: [p.id], addrs: p.addrs, ip: p.addrs.map((a) => a.match(/^\/ip4\/([\d.]+)\//)?.[1]).find(Boolean) ?? null, status: 'advertised' })
   for (const p of providers) onEvent({ type: 'provider', provider: p })
-  await annotate(providers, { fetchFn })
-  for (const p of providers) onEvent({ type: 'provider', provider: p })
+  const annotated = annotate(providers, { fetchFn }).then(() => { for (const p of providers) onEvent({ type: 'provider', provider: p }) }) // IP/ASN lookups run alongside the probes
 
   const usable = eps.filter((e) => e.https || !mixedContent).map((e) => e.url)
   const dag = await fetchBlocks(cid, usable, { fetchFn })
@@ -38,14 +38,15 @@ export async function run(cid, { vantage, rounds = 5, maxExcessMs = 30, concurre
     const worker = async () => {
       for (let p; (p = queue.shift());) {
         if (p.url && !p.url.startsWith('https') && mixedContent) Object.assign(p, { status: 'unreachable', error: 'http endpoint blocked from an https page' })
-        else if (p.url) Object.assign(p, await challenge(p.url, dag.blocks, { rounds, maxExcessMs, fetchFn }), { warmed: p.url === dag.from || undefined })
-        else if (bitswapProbe) Object.assign(p, await (bsLock = bsLock.then(() => bitswapProbe(p, dag.blocks, { rounds, maxExcessMs }))))
+        else if (p.url) { p.status = 'testing'; onEvent({ type: 'provider', provider: p }); Object.assign(p, await challenge(p.url, dag.blocks, { rounds, maxExcessMs, fetchFn, onPair: (k, n) => { p.progress = [k, n]; onEvent({ type: 'provider', provider: p }) } }), { warmed: p.url === dag.from || undefined, progress: undefined }) }
+        else if (bitswapProbe) { p.status = 'testing'; onEvent({ type: 'provider', provider: p }); Object.assign(p, await (bsLock = bsLock.then(() => bitswapProbe(p, dag.blocks, { rounds, maxExcessMs })))) }
         else Object.assign(p, { status: 'untested', error: 'bitswap-only peer; probed only in the web app' })
         onEvent({ type: 'provider', provider: p })
       }
     }
     await Promise.all(Array.from({ length: concurrency }, worker))
   }
+  await annotated
   const report = { v: 1, cid, vantage, blocks: dag?.blocks.length ?? 0, providers: providers.map(({ addrs, failed, ...p }) => p) }
   onEvent({ type: 'done', report })
   return report

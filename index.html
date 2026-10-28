@@ -9,50 +9,75 @@
   @media (prefers-color-scheme: dark) { :root { --fg:#e6e6e6; --mut:#999; --bg:#111; --line:#333; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --dim:#777 } }
   body { font: 15px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); max-width: 1100px; margin: 2rem auto; padding: 0 1rem }
   h1 { font-size: 1.4rem } h2 { font-size: 1.1rem; margin-top: 2rem }
-  input, button, select, textarea { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: .4rem .6rem }
+  input, button, select, textarea { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: .5rem .7rem; min-height: 44px; box-sizing: border-box }
+  input[type=checkbox] { width: 24px; height: 24px; min-height: 0; vertical-align: middle }
+  summary { min-height: 44px; display: flex; align-items: center }
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch }
+  .gloss li { margin: .3rem 0 }
+  progress { width: 100%; height: 6px; margin: .3rem 0 }
+  .swipe { display: none } @media (max-width: 700px) { .swipe { display: block } }
   button { cursor: pointer } button:disabled { opacity: .5; cursor: default }
   .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0 }
   #cid { flex: 1; min-width: 20rem; font-family: ui-monospace, monospace }
-  table { border-collapse: collapse; width: 100%; font-size: .9rem } th, td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top }
+  table { border-collapse: collapse; width: 100%; font-size: 14px } th, td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top }
   td.n { text-align: right; font-variant-numeric: tabular-nums } th.n { text-align: right }
-  .mono { font-family: ui-monospace, monospace; font-size: .85rem; word-break: break-all }
-  .local { color: var(--ok) } .on-demand { color: var(--warn) } .invalid, .unreachable { color: var(--bad) } .advertised, .untested, .probing { color: var(--dim) }
-  .mut { color: var(--mut) } small { color: var(--mut) }
+  .mono { font-family: ui-monospace, monospace; font-size: .9rem; overflow-wrap: anywhere } td .mono { min-width: 12rem; display: inline-block }
+  .local { color: var(--ok) } .on-demand { color: var(--warn) } .invalid, .unreachable { color: var(--bad) } .advertised, .untested, .testing, .probing { color: var(--dim) }
+  .mut { color: var(--mut) } small { color: var(--mut); font-size: 14px }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem; margin: 1rem 0 }
-  .card { border: 1px solid var(--line); border-radius: 6px; padding: .6rem } .card b { display: block; font-size: 1.6rem } .card span { font-size: .8rem; color: var(--mut) }
-  textarea { width: 100%; min-height: 4rem; font-family: ui-monospace, monospace; font-size: .8rem }
-  #share { width: 100%; font-family: ui-monospace, monospace; font-size: .8rem }
+  .card { border: 1px solid var(--line); border-radius: 6px; padding: .6rem } .card b { display: block; font-size: 1.6rem } .card span { font-size: 14px; color: var(--mut) }
+  textarea { width: 100%; min-height: 4rem; font-family: ui-monospace, monospace; font-size: 14px }
+  #share { width: 100%; font-family: ui-monospace, monospace; font-size: 14px }
   details { margin: .5rem 0 } summary { cursor: pointer; color: var(--mut) }
   .grade { font-size: 1.25rem; margin: .5rem 0 } .grade.none, .grade.single { color: var(--bad) } .grade.unproven { color: var(--warn) } .grade.proven { color: var(--ok) }
-  .tag { font-size: .75rem; border: 1px solid var(--line); border-radius: 3px; padding: 0 .3rem; color: var(--mut) }
+  .tag { font-size: 13px; border: 1px solid var(--line); border-radius: 3px; padding: 0 .3rem; color: var(--mut) }
 </style>
 </head>
 <body>
 <h1>CID resilience</h1>
-<p>Paste a CID. The page finds who advertises it, fetches random blocks from each provider, verifies the hashes, and times each fetch against that provider's own no-op baseline to tell a <b class="local">local copy</b> from one <b class="on-demand">fetched on demand</b>. Runs entirely in your browser. <a href="https://github.com/SgtPooki/cid-resilience#readme">What it measures and what it can't</a>.</p>
+<p><b>Paste a content ID, get a count of real, independent copies.</b> The page asks the public IPFS index who claims to hold the content, downloads a few pieces from each of them, checks the bytes, and times the answers to tell a <b class="local">local copy</b> (served from that provider's own storage) from one <b class="on-demand">fetched on demand</b> (relayed from somewhere else). Free, no account, nothing stored on any server. <a href="https://github.com/SgtPooki/cid-resilience#readme">What it measures and what it can't</a>.</p>
+<details><summary>Words used on this page</summary>
+  <ul class="gloss">
+    <li><b>CID</b>: content identifier, the hash-based name of a file or folder on IPFS (the public peer-to-peer file network). Pasting one tells the page what to look for.</li>
+    <li><b>provider</b>: a server that told the public index (IPNI) it holds the CID. "Advertised" means listed there; it says nothing about whether it really has the bytes.</li>
+    <li><b>local copy / on demand</b>: a provider that answered a random piece as fast as it answers an empty request is counted as holding the bytes itself; one that was measurably slower probably fetched them from elsewhere first.</li>
+    <li><b>vantage</b>: the place you measure from, i.e. this browser. Your label and coordinates are attached to your results so that results from different places can be merged.</li>
+    <li><b>box / network</b>: providers sharing one IP address are one box; providers in one network (an ASN, the number that identifies a hosting company's network) are one operator. Two boxes 1 km apart are not independent, which is why distance matters.</li>
+    <li><b>baseline / excess</b>: the baseline is how long the provider takes to answer an empty request (a "no-op"); excess is how much longer a real piece took. Large excess means the piece was fetched from somewhere else first.</li>
+    <li><b>weak timing</b>: the content had fewer than 3 pieces, so each provider got a single test instead of several; treat local/on-demand as a hint, not a verdict. <b>warmed</b>: that provider served the sample first, so its cache was already warm when tested.</li>
+    <li><b>self-reported</b>: the label and coordinates attached to a result are whatever the person who measured typed in; nothing checks them.</li>
+    <li><b>proven apart</b>: light in fibre travels about 100 km per millisecond of round trip, so each measured delay bounds how far a provider can be from you. Two providers whose bounds from two different places cannot overlap are proven to sit in different locations.</li>
+    <li><b>CDN</b>: a content delivery network edge that caches whatever was recently requested; fast, but not durable storage.</li>
+  </ul>
+</details>
+<details><summary>What leaves your browser, and what it costs</summary>
+  <p class="mut"><small>Free, no account, nothing stored on any server. This browser remembers your last results and location so a reload does not lose them (use "Forget my results" to clear that), and after a run the address bar holds the share link for the results on screen. The CID you paste goes to the public index (cid.contact, delegated-ipfs.dev) and to every provider found; provider hostnames go to Cloudflare DNS and RIPE for IP and network lookup. Your label and coordinates leave only inside a share link you choose to send. If a provider is reachable only over bitswap, the helia library is loaded from jsdelivr (you can turn that off under Settings).</small></p>
+</details>
 
 <div class="row">
   <input id="cid" placeholder="bafy..." value="bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi" spellcheck="false">
   <button id="run">Measure</button>
 </div>
 <div class="row">
-  <label>Vantage label <input id="label" placeholder="e.g. home, Austin" size="16"></label>
-  <label>lat <input id="lat" size="7" placeholder="30.3"></label>
-  <label>lon <input id="lon" size="7" placeholder="-97.7"></label>
+  <label>Where are you? name <input id="label" placeholder="e.g. home, Austin" size="16"></label>
+  <label>latitude <input id="lat" size="7" placeholder="30.3" inputmode="decimal"></label>
+  <label>longitude <input id="lon" size="7" placeholder="-97.7" inputmode="decimal"></label>
   <button id="geo" type="button">Use my location</button>
-  <small>The location button rounds to 0.1 degree (~11 km); typed values are used as given. Self-reported: anyone merging your report trusts it. Changing it after a run updates your own vantage.</small>
 </div>
+<p class="mut"><small>Optional: used only to say how far each copy can be from you, and to merge results from other places. Stays in this browser except inside a share link you send. Button rounds to 0.1 degree (~11 km); typed values are used as given.</small></p>
 <details><summary>Settings</summary>
   <div class="row">
-    <label>rounds <input id="rounds" type="number" value="5" min="1" max="20" size="3"></label>
-    <label>max excess ms <input id="excess" type="number" value="30" min="1" size="4"></label>
-    <label><input id="bitswap" type="checkbox" checked> probe bitswap-only peers via helia (loads from jsdelivr)</label>
+    <label>pieces to fetch per provider <input id="rounds" type="number" value="5" min="1" max="20" size="3"></label>
+    <label>slowest answer still counted as local, ms over baseline <input id="excess" type="number" value="30" min="1" max="10000" size="4"></label>
+    <label><input id="bitswap" type="checkbox" checked> also test providers reachable only over bitswap (loads the helia library from jsdelivr at run time)</label>
   </div>
 </details>
 
-<div id="status" class="mut"></div>
+<div id="status" class="mut" aria-live="polite"></div>
+<progress id="prog" max="1" value="0" hidden></progress>
 
 <div id="results" hidden>
+  <div id="final" hidden>
   <h2>Resilience</h2>
   <p id="grade" class="grade"></p>
   <h2>Summary</h2>
@@ -61,26 +86,31 @@
   <p id="sepnote" class="mut"></p>
   <div id="cert"></div>
 
+  </div>
   <h2>Providers</h2>
-  <table>
+  <p class="swipe mut"><small>Swipe the table sideways for more columns.</small></p>
+  <div class="scroll"><table>
     <thead><tr><th>status</th><th>endpoint</th><th>IP / operator</th><th class="n">baseline ms</th><th class="n">excess ms</th><th class="n">verified</th><th class="n">≤ km away</th><th>seen from</th></tr></thead>
     <tbody id="rows"></tbody>
-  </table>
+  </table></div>
   <p><small>"≤ km away" is 102 km per ms of baseline round trip plus 11 km, an upper bound on the responder's distance from that vantage (light in fibre), capped at half the Earth. It is not an estimate of where the responder is. One vantage can never prove two providers are apart; two vantages with non-overlapping disks can. "untested" means no probe ran from that vantage, not that the provider is down.</small></p>
 
+  <div id="final2" hidden>
   <h2>Vantages</h2>
   <ul id="vantages"></ul>
   <p id="incons" class="invalid"></p>
+  </div>
 
   <h2>Share and merge</h2>
   <p>This link holds every report shown above. Send it to someone elsewhere; when they measure from it, their vantage is added and the separation proof updates.</p>
   <input id="share" readonly>
-  <div class="row"><button id="copy">Copy link</button><button id="download">Download JSON</button></div>
-  <p>Or paste another report's link or JSON here:</p>
+  <div class="row"><button id="copy">Copy link</button><button id="download">Download JSON</button><button id="forget" type="button">Forget my results</button><span id="sharemsg" class="mut"></span></div>
+  <p>Or paste a share link, or the contents of a downloaded JSON file, from someone who measured elsewhere:</p>
   <textarea id="paste" placeholder="https://.../#r=... or [{...}]"></textarea>
   <div class="row"><button id="mergebtn">Merge</button></div>
 </div>
 
 <script type="module" src="./app.js"></script>
+<footer class="mut"><small>Source, licence and research: <a href="https://github.com/SgtPooki/cid-resilience">github.com/SgtPooki/cid-resilience</a>. A FilOz research prototype; not a service, no uptime promise.</small></footer>
 </body>
 </html>

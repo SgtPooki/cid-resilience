@@ -9,12 +9,12 @@ export const median = (xs) => xs.length ? xs.toSorted((a, b) => a - b)[Math.floo
 // substitute non-root blocks, and only the first maxBlocks of the DAG are ever sampled. Both are stated in the README.
 export async function fetchBlocks(cid, urls, { maxBlocks = 64, timeoutMs = 30000, fetchFn = fetch } = {}) {
   const root = cidDigest(cid)
-  for (const base of urls) {
-    const ctl = new AbortController()
+  const ctls = urls.map(() => new AbortController())
+  const one = async (base, ctl) => {
     const t = setTimeout(() => ctl.abort(), timeoutMs)
     try {
       const r = await fetchFn(`${base}/ipfs/${cid}?format=car`, { headers: { accept: 'application/vnd.ipld.car' }, signal: ctl.signal })
-      if (!r.ok) continue
+      if (!r.ok) throw new Error(`${r.status}`)
       const reader = r.body.getReader()
       let buf = new Uint8Array(0), state = { headerDone: false }
       const blocks = []
@@ -30,15 +30,20 @@ export async function fetchBlocks(cid, urls, { maxBlocks = 64, timeoutMs = 30000
           if (!blocks.some((x) => x.digest === b.digest)) blocks.push({ cid: b.cid, mhCode: b.mhCode, digest: b.digest, size: b.size })
         }
       }
-      ctl.abort()
-      if (!blocks.length) continue
+      if (!blocks.length) throw new Error('empty CAR')
       return { blocks, from: base }
-    } catch (e) {
-      if (e.message?.startsWith('bad block')) throw e
-    } finally { clearTimeout(t) }
+    } finally { clearTimeout(t); ctl.abort() }
   }
-  return null
+  // Race every endpoint; the first good CAR wins and the rest are aborted. A bad-block CAR is a hard failure, not a race loser.
+  try {
+    return await Promise.any(urls.map((u, i) => one(u, ctls[i]).catch((e) => { if (e.message?.startsWith('bad block')) throw Object.assign(e, { fatal: true }); throw e })))
+  } catch (agg) {
+    const fatal = agg.errors?.find((e) => e.fatal)
+    if (fatal) throw fatal
+    return null
+  } finally { ctls.forEach((c) => c.abort()) }
 }
+
 // Time to first byte + body. -> { ttfb, total, ok, status, body }
 export async function timedGet(base, cid, { timeoutMs = 15000, fetchFn = fetch, now = () => performance.now() } = {}) {
   const t0 = now()
@@ -56,7 +61,7 @@ export function pick(blocks, n, rand = Math.random) {
 }
 
 // Classify one endpoint. -> { status: 'local'|'on-demand'|'invalid'|'unreachable', baseline, probe, excess, verified, rounds, error? }
-export async function challenge(base, blocks, { rounds = 5, maxExcessMs = 30, fetchFn = fetch, timeoutMs = 15000, now } = {}) {
+export async function challenge(base, blocks, { rounds = 5, maxExcessMs = 30, fetchFn = fetch, timeoutMs = 15000, now, onPair = () => {} } = {}) {
   const opts = { fetchFn, timeoutMs, now }
   try {
     const warm = await timedGet(base, IDENTITY, opts)
@@ -69,6 +74,7 @@ export async function challenge(base, blocks, { rounds = 5, maxExcessMs = 30, fe
       const bl = (await timedGet(base, IDENTITY, opts)).ttfb
       const r = await timedGet(base, b.cid, opts)
       baseline.push(bl); probe.push(r.ttfb); transfer.push(r.total - r.ttfb); diffs.push(r.ttfb - bl)
+      onPair(diffs.length, picks.length)
       const h = r.ok ? await sha256hex(r.body) : null
       if (h && h === b.digest) verified++
       else failed.push({ cid: b.cid, status: r.status })
@@ -77,6 +83,7 @@ export async function challenge(base, blocks, { rounds = 5, maxExcessMs = 30, fe
     const allValid = verified === picks.length
     return {
       status: !allValid ? 'invalid' : excess < maxExcessMs ? 'local' : 'on-demand',
+      error: !allValid ? (failed.some((f) => f.status === 200) ? 'served wrong bytes' : `HTTP ${failed[0]?.status}: piece not served`) : undefined,
       baseline: median(baseline), probe: median(probe), excess, transfer: median(transfer), verified, rounds: picks.length, failed,
       weak: picks.length < 3 || excess < -50 || undefined, // fewer than 3 pairs, or baseline noisier than the signal: timing is not meaningful
     }

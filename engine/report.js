@@ -3,7 +3,7 @@
 
 export const newVantage = (label, loc) => ({ id: Math.random().toString(36).slice(2, 10), label: label || 'unnamed', lat: loc?.lat ?? null, lon: loc?.lon ?? null, ts: new Date().toISOString() })
 
-const STATUSES = new Set(['advertised', 'untested', 'local', 'on-demand', 'invalid', 'unreachable'])
+const STATUSES = new Set(['advertised', 'untested', 'testing', 'local', 'on-demand', 'invalid', 'unreachable'])
 const num = (x) => (typeof x === 'number' && isFinite(x) ? x : null)
 // Shared reports are untrusted input: keep only known fields with sane types, drop anything else.
 export function sanitize(r) {

@@ -1,4 +1,4 @@
-import { run, analyze, newVantage, withinKm, radiusKm, haversineKm, disksOf, inconsistencies, shareUrl, reportsFromUrl, sanitize, grade } from './engine/index.js'
+import { run, analyze, newVantage, withinKm, radiusKm, haversineKm, disksOf, inconsistencies, shareUrl, reportsFromUrl, sanitize, grade, cidDigest } from './engine/index.js'
 
 const $ = (id) => document.getElementById(id)
 let reports = [], providers = new Map(), running = false
@@ -9,25 +9,39 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 function syncVantage() {
   const mine = reports.find((r) => r.vantage.id === current?.id)
   if (!mine) return
-  mine.vantage.lat = $('lat').value ? Number($('lat').value) : null
-  mine.vantage.lon = $('lon').value ? Number($('lon').value) : null
+  let inputs
+  try { inputs = readInputs() } catch (e) { $('status').textContent = e.message; return }
+  mine.vantage.lat = inputs.loc?.lat ?? null
+  mine.vantage.lon = inputs.loc?.lon ?? null
   mine.vantage.label = $('label').value.trim() || 'me'
-  renderMerged()
+  $('status').textContent = inputs.loc ? 'Location updated.' : 'Location cleared.'
+  renderMerged(); saveState()
 }
 for (const id of ['lat', 'lon', 'label']) $(id).onchange = syncVantage
 $('geo').onclick = () => navigator.geolocation.getCurrentPosition(
   (p) => { $('lat').value = p.coords.latitude.toFixed(1); $('lon').value = p.coords.longitude.toFixed(1); syncVantage() },
-  (e) => { $('status').textContent = `location denied: ${e.message}` }, { timeout: 10000 })
+  (e) => { $('status').textContent = `Location not available (${e.message}). You can type latitude and longitude by hand instead.` }, { timeout: 10000 })
 
+let total = 0, t0 = 0, ticker = null
 function renderLive() {
   $('results').hidden = false
-  $('rows').innerHTML = [...providers.values()].map((p) => row(p, [{ vantage: current, status: p.status, baseline: p.baseline, excess: p.excess, verified: p.verified, rounds: p.rounds, error: p.error }])).join('')
+  const list = [...providers.values()]
+  const rounds = Number($('rounds').value) || 5
+  const done = list.filter((p) => !['advertised', 'testing'].includes(p.status)).length
+  const pairs = list.reduce((n, p) => n + (p.progress ? p.progress[0] : ['advertised', 'testing'].includes(p.status) ? 0 : rounds), 0)
+  $('prog').hidden = false; $('prog').max = Math.max(total * rounds, 1); $('prog').value = pairs
+  const local = list.filter((p) => p.status === 'local').length
+  const secs = Math.round((performance.now() - t0) / 1000)
+  $('grade').textContent = `Measuring, ${secs} s: ${pairs} of ${total * rounds} test fetches done, ${done} of ${total} providers finished, ${local} local cop${local === 1 ? 'y' : 'ies'} so far`
+  $('grade').className = 'grade'
+  $('final').hidden = false; $('cards').hidden = true; $('near').hidden = true; $('sepnote').hidden = true; $('cert').hidden = true; $('final2').hidden = true
+  $('rows').innerHTML = list.map((p) => row(p, [{ vantage: current, status: p.status, baseline: p.baseline, excess: p.excess, verified: p.verified, rounds: p.rounds, error: p.error, weak: p.weak }])).join('')
 }
 
-const STATUS = new Set(['advertised', 'untested', 'local', 'on-demand', 'invalid', 'unreachable'])
+const STATUS = new Set(['advertised', 'untested', 'testing', 'local', 'on-demand', 'invalid', 'unreachable'])
 const st = (s) => (STATUS.has(s) ? s : 'advertised')
 const safeHttp = (u) => (typeof u === 'string' && /^https?:\/\/[\w.-]+(:\d+)?$/.test(u) ? u : null)
-const BEST = ['local', 'on-demand', 'invalid', 'unreachable', 'untested', 'advertised']
+const BEST = ['local', 'on-demand', 'invalid', 'unreachable', 'testing', 'untested', 'advertised']
 function row(p, obs) {
   const ob = obs.toSorted((a, b) => BEST.indexOf(st(a.status)) - BEST.indexOf(st(b.status)))[0] // best observation across vantages; per-vantage detail is in the last column
   const url = safeHttp(p.url)
@@ -35,12 +49,15 @@ function row(p, obs) {
   const op = [esc(p.ip), p.holder ? esc(`AS${p.asn} ${p.holder}`) : p.asn ? esc(`AS${p.asn}`) : ''].filter(Boolean).join('<br>') + (p.cdn ? ' <span class="tag">cdn</span>' : '') + (obs.some((o) => o.warmed) ? ' <span class="tag" title="served the sample CAR first, so its cache was warm before the challenge">warmed</span>' : '')
   const km = obs.filter((o) => o.status === 'local' && o.vantage?.lat != null).map((o) => `${fmt(radiusKm(o.baseline))}`).join(' / ')
   const seen = obs.map((o) => `<span class="${st(o.status)}">${esc(o.vantage?.label ?? '?')}: ${st(o.status)}${o.weak ? ' (weak timing)' : ''}${o.error ? ` (${esc(o.error)})` : ''}</span>`).join('<br>')
-  return `<tr><td class="${st(ob.status)}">${st(ob.status)}</td><td>${where}<br><small>${(p.peers ?? []).length} peer id${p.peers?.length === 1 ? '' : 's'}</small></td><td>${op}</td><td class="n">${fmt(ob.baseline)}</td><td class="n">${fmt(ob.excess)}</td><td class="n">${ob.verified != null ? `${fmt(ob.verified)}/${fmt(ob.rounds)}` : ''}</td><td class="n">${km}</td><td>${seen}</td></tr>`
+  const cell = ob.status === 'testing' ? `testing${p.progress ? ` ${p.progress[0]}/${p.progress[1]}` : ''}` : st(ob.status)
+  return `<tr><td class="${st(ob.status)}">${cell}</td><td>${where}<br><small>${(p.peers ?? []).length} peer id${p.peers?.length === 1 ? '' : 's'}</small></td><td>${op}</td><td class="n">${fmt(ob.baseline)}</td><td class="n">${fmt(ob.excess)}</td><td class="n">${ob.verified != null ? `${fmt(ob.verified)}/${fmt(ob.rounds)}` : ''}</td><td class="n">${km}</td><td>${seen}</td></tr>`
 }
 
 function renderMerged() {
   const { merged, score, boxes } = analyze(reports)
   const s = score
+  $('prog').hidden = true
+  for (const id of ['final', 'cards', 'near', 'sepnote', 'cert', 'final2']) $(id).hidden = false
   const g = grade(s)
   $('grade').textContent = g.headline; $('grade').className = `grade ${g.level}`
   const sepIds = new Set(s.separateKeys)
@@ -61,7 +78,7 @@ function renderMerged() {
   const when = ts.length ? ` Measured ${new Date(Math.min(...ts)).toISOString().slice(0, 16)}Z${ts.length > 1 ? ` to ${new Date(Math.max(...ts)).toISOString().slice(0, 16)}Z` : ''}; a report only says what was true then.` : ''
   $('sepnote').textContent = (s.locatedVantages >= 2
     ? `${s.provenSeparate} responder location${s.provenSeparate === 1 ? '' : 's'} proven geographically apart (${s.operators} networks, ${s.boxes} boxes seen${s.capped ? '; only the first 20 boxes were searched, so this is a lower bound' : ''}). Geographic separation only: it says nothing about shared ownership or software. Vantage locations are self-reported.`
-    : `From one vantage every distance disk contains you, so nothing can be proven apart. Next step: copy the share link below and open it from another city, then press Measure there. Conservative count meanwhile: ${s.operators} networks.`) + when
+    : `From one place every distance bound includes you, so nothing can be proven apart yet. Next step: copy the share link below, open it from another city (a friend, a phone on mobile data elsewhere, a server), and press Measure there. Until then, counting independent networks instead of copies gives ${s.operators}.`) + when
   // Separation certificate: name the pair, both disks, and the gap, so the proof is readable without the table.
   $('cert').innerHTML = s.provenSeparate >= 2 ? (() => {
     const sepBoxes = boxes.filter((c) => sepIds.has(c.key))
@@ -90,55 +107,84 @@ function renderMerged() {
   }
   $('incons').innerHTML = bad.join('<br>')
   shareUrl(location.href, reports).then((u) => { $('share').value = u; history.replaceState(null, '', u) })
+  $('copy').disabled = $('download').disabled = !reports.length
+  if (!reports.length) $('sharemsg').textContent = 'Nothing to share yet: press Measure first.'
   $('results').hidden = false
 }
 const rank = (p) => ({ local: 0, 'on-demand': 1, invalid: 2, unreachable: 3, untested: 4 }[p.obs[0]?.status] ?? 5)
 
 let current
+// Validate everything locally before any network request.
+function readInputs() {
+  const cid = $('cid').value.trim()
+  if (!cid) throw new Error('Paste a CID first. It starts with bafy, bafk or Qm.')
+  try { cidDigest(cid) } catch { throw new Error('That is not a valid CID: check for a copy error or a missing character. Expected something like bafybei... or Qm...') }
+  const num = (id, lo, hi, what) => { const v = $(id).value.trim(); if (v === '') return null; const n = Number(v); if (!isFinite(n) || n < lo || n > hi) throw new Error(`${what} must be a number between ${lo} and ${hi}.`); return n }
+  const lat = num('lat', -90, 90, 'latitude'), lon = num('lon', -180, 180, 'longitude')
+  if ((lat == null) !== (lon == null)) throw new Error('Enter both latitude and longitude, or neither.')
+  const rounds = num('rounds', 1, 20, 'pieces per provider') ?? 5
+  const maxExcessMs = num('excess', 1, 10000, 'ms over baseline') ?? 30
+  $('rounds').value = rounds; $('excess').value = maxExcessMs
+  return { cid, loc: lat == null ? null : { lat, lon }, rounds, maxExcessMs }
+}
+const saveState = () => { try { localStorage.setItem('cid-resilience', JSON.stringify({ reports, label: $('label').value, lat: $('lat').value, lon: $('lon').value })) } catch {} }
+
 $('run').onclick = async () => {
   if (running) return
-  running = true; $('run').disabled = true
-  const cid = $('cid').value.trim()
-  const loc = $('lat').value ? { lat: Number($('lat').value), lon: Number($('lon').value) } : null
+  let inputs
+  try { inputs = readInputs() } catch (e) { $('status').textContent = e.message; return }
+  running = true; $('run').disabled = true; $('run').textContent = 'Measuring...'
+  t0 = performance.now(); clearInterval(ticker); ticker = setInterval(() => { if (running) renderLive() }, 1000)
+  const { cid, loc } = inputs
   current = newVantage($('label').value.trim() || 'me', loc)
-  providers = new Map()
-  $('status').textContent = 'discovering providers...'
+  try { current.id = localStorage.getItem('cid-resilience-vantage') ?? (localStorage.setItem('cid-resilience-vantage', current.id), current.id) } catch {}
+  providers = new Map(); total = 0
+  $('status').textContent = 'Asking the public index who holds this CID...'
+  $('status').scrollIntoView({ block: 'start', behavior: 'smooth' })
   try {
     const bitswapProbe = $('bitswap').checked ? (await import('./engine/bitswap.js')).bitswapProbe : null
     const report = await run(cid, {
-      vantage: current, rounds: Number($('rounds').value), maxExcessMs: Number($('excess').value), bitswapProbe,
+      vantage: current, rounds: inputs.rounds, maxExcessMs: inputs.maxExcessMs, bitswapProbe,
       onEvent: (e) => {
-        if (e.type === 'discovered') $('status').textContent = `${e.peers} peers advertised (ipni ${e.counts.ipni}, delegated ${e.counts.delegated}), ${e.endpoints} http endpoints, ${e.bitswapPeers} browser-dialable bitswap peers${Object.keys(e.errors).length ? `; discovery errors: ${JSON.stringify(e.errors)}` : ''}. Fetching DAG...`
-        if (e.type === 'dag') $('status').textContent = e.blocks ? `${e.blocks} block${e.blocks === 1 ? '' : 's'} sampled from ${e.from}. Challenging providers...${e.blocks < 3 ? ' This DAG has fewer than 3 blocks, so each provider gets one challenge pair and timing is marked weak.' : ''}` : 'no endpoint served the DAG'
+        if (e.type === 'discovered') { total = e.endpoints + e.bitswapPeers; $('status').textContent = `${e.peers} providers claim to hold it (${e.endpoints} over HTTP, ${e.bitswapPeers} over bitswap only)${Object.keys(e.errors).length ? `; one index did not answer (${Object.keys(e.errors).join(', ')})` : ''}. Downloading a sample of the content...` }
+        if (e.type === 'dag') $('status').textContent = e.blocks ? `Got ${e.blocks} piece${e.blocks === 1 ? '' : 's'} of the content from ${e.from}. Now fetching random pieces from every provider and timing the answers; this takes a minute or two.${e.blocks < 3 ? ' This content has fewer than 3 pieces, so each provider gets one test and timing is marked weak.' : ''}` : 'No provider served the content, so nothing can be tested.'
         if (e.type === 'provider') { providers.set(e.provider.url ?? e.provider.peers[0], e.provider); renderLive() }
       },
     })
     reports = reports.filter((r) => r.cid === cid && r.vantage.id !== current.id).concat(report)
-    $('status').textContent = 'done'
-    renderMerged()
+    $('status').textContent = 'Done.'
+    renderMerged(); saveState()
   } catch (err) {
     $('status').textContent = `error: ${err.message}`
   }
-  running = false; $('run').disabled = false
+  running = false; $('run').disabled = false; $('run').textContent = 'Measure'; clearInterval(ticker)
 }
 
-$('copy').onclick = () => navigator.clipboard.writeText($('share').value)
+$('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('share').value); $('sharemsg').textContent = 'Link copied.' }
+  catch { $('share').select(); $('sharemsg').textContent = 'Could not copy automatically: the link is selected, press Ctrl/Cmd+C.' }
+}
 $('download').onclick = () => {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(new Blob([JSON.stringify(reports, null, 1)], { type: 'application/json' }))
   a.download = `cid-resilience-${reports[0]?.cid ?? 'report'}.json`; a.click()
+  $('sharemsg').textContent = `Saved ${a.download}.`
 }
 $('mergebtn').onclick = async () => {
   const t = $('paste').value.trim()
+  if (!t) { $('status').textContent = 'Paste a share link or the contents of a downloaded JSON file into the box first.'; return }
   try {
     const incoming = (t.startsWith('[') || t.startsWith('{') ? [JSON.parse(t)].flat().map(sanitize) : await reportsFromUrl(t))
     if (!incoming.length) throw new Error('no reports found')
+    const have = reports[0]?.cid ?? $('cid').value.trim()
+    if (have && incoming.some((r) => r.cid !== have)) throw new Error(`that report is for a different CID (${incoming.find((r) => r.cid !== have).cid.slice(0, 16)}...) than the one on this page`)
     const candidate = [...reports, ...incoming]
     analyze(candidate) // throws on mixed CIDs; only commit state if it merges
     reports = candidate
     if (!$('cid').value) $('cid').value = incoming[0].cid
-    renderMerged(); $('paste').value = ''
-  } catch (e) { $('status').textContent = `merge failed: ${e.message}` }
+    renderMerged(); saveState(); $('paste').value = ''
+    $('status').textContent = `Merged ${incoming.length} report${incoming.length === 1 ? '' : 's'}; ${reports.length} in total.`
+  } catch (e) { $('status').textContent = `Could not merge: ${e.message}. Paste a share link from this site or the contents of a JSON it downloaded.` }
 }
 
 // ?cid=... prefills; &auto runs immediately. A #r= fragment loads shared reports.
@@ -146,10 +192,25 @@ const params = new URLSearchParams(location.search)
 if (params.get('cid')) $('cid').value = params.get('cid')
 if (params.get('label')) $('label').value = params.get('label')
 if (params.get('lat')) { $('lat').value = params.get('lat'); $('lon').value = params.get('lon') }
+$('copy').disabled = $('download').disabled = true; $('sharemsg').textContent = 'Nothing to share yet: press Measure first.'
+$('forget').onclick = () => { try { localStorage.removeItem('cid-resilience') } catch {} reports = []; history.replaceState(null, '', location.pathname); $('results').hidden = true; $('status').textContent = 'Forgot the saved results and location.' }
+window.addEventListener('beforeunload', (e) => { if (running) { e.preventDefault(); e.returnValue = '' } })
 reportsFromUrl(location.href).then((rs) => {
   if (params.has('auto')) $('run').click()
-  if (!rs.length) return
-  reports = rs; $('cid').value = rs[0].cid
-  $('status').textContent = `loaded ${rs.length} report${rs.length === 1 ? '' : 's'} from the link. Measure from here to add your vantage.`
-  renderMerged()
-}).catch((e) => { $('status').textContent = `could not read link: ${e.message}` })
+  if (rs.length) {
+    reports = rs; $('cid').value = rs[0].cid
+    $('status').textContent = `Loaded ${rs.length} report${rs.length === 1 ? '' : 's'} from the link. Press Measure to add this location.`
+    renderMerged(); return
+  }
+  if (location.hash.startsWith('#r=')) { $('status').textContent = 'This share link is incomplete or damaged. Ask for it again, or paste the downloaded JSON instead.'; return }
+  // Nothing in the URL: restore the last session from this browser.
+  try {
+    const saved = JSON.parse(localStorage.getItem('cid-resilience') ?? 'null')
+    if (saved?.reports?.length) {
+      reports = saved.reports.map(sanitize); $('cid').value ||= reports[0].cid
+      $('label').value ||= saved.label ?? ''; $('lat').value ||= saved.lat ?? ''; $('lon').value ||= saved.lon ?? ''
+      $('status').textContent = 'Restored your last results from this browser. Press Measure to run again.'
+      renderMerged()
+    }
+  } catch {}
+}).catch(() => { $('status').textContent = 'This share link is incomplete or damaged. Ask for it again, or paste the downloaded JSON instead.' })
