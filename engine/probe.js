@@ -72,6 +72,6 @@ export async function challenge(base, blocks, { rounds = 5, maxExcessMs = 30, fe
       baseline: median(baseline), probe: median(probe), excess, verified, rounds: picks.length, failed,
     }
   } catch (err) {
-    return { status: 'unreachable', error: err.cause?.code ?? err.name ?? String(err) }
+    return { status: 'unreachable', error: err.cause?.code ?? (err.name === 'TypeError' ? 'fetch failed (TLS, CORS or DNS)' : err.name) }
   }
 }

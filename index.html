@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CID resilience: how many independent copies really exist?</title>
+<style>
+  :root { --fg:#1a1a1a; --mut:#666; --bg:#fff; --line:#ddd; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; --dim:#888 }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e6e6e6; --mut:#999; --bg:#111; --line:#333; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --dim:#777 } }
+  body { font: 15px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); max-width: 1100px; margin: 2rem auto; padding: 0 1rem }
+  h1 { font-size: 1.4rem } h2 { font-size: 1.1rem; margin-top: 2rem }
+  input, button, select, textarea { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: .4rem .6rem }
+  button { cursor: pointer } button:disabled { opacity: .5; cursor: default }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0 }
+  #cid { flex: 1; min-width: 20rem; font-family: ui-monospace, monospace }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem } th, td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top }
+  td.n { text-align: right; font-variant-numeric: tabular-nums } th.n { text-align: right }
+  .mono { font-family: ui-monospace, monospace; font-size: .85rem; word-break: break-all }
+  .local { color: var(--ok) } .on-demand { color: var(--warn) } .invalid, .unreachable { color: var(--bad) } .advertised, .probing { color: var(--dim) }
+  .mut { color: var(--mut) } small { color: var(--mut) }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem; margin: 1rem 0 }
+  .card { border: 1px solid var(--line); border-radius: 6px; padding: .6rem } .card b { display: block; font-size: 1.6rem } .card span { font-size: .8rem; color: var(--mut) }
+  textarea { width: 100%; min-height: 4rem; font-family: ui-monospace, monospace; font-size: .8rem }
+  #share { width: 100%; font-family: ui-monospace, monospace; font-size: .8rem }
+  details { margin: .5rem 0 } summary { cursor: pointer; color: var(--mut) }
+  .tag { font-size: .75rem; border: 1px solid var(--line); border-radius: 3px; padding: 0 .3rem; color: var(--mut) }
+</style>
+</head>
+<body>
+<h1>CID resilience</h1>
+<p>Paste a CID. The page finds who advertises it, fetches random blocks from each provider, verifies the hashes, and times each fetch against that provider's own no-op baseline to tell a <b class="local">local copy</b> from one <b class="on-demand">fetched on demand</b>. Runs entirely in your browser. <a href="https://github.com/SgtPooki/cid-resilience#readme">What it measures and what it can't</a>.</p>
+
+<div class="row">
+  <input id="cid" placeholder="bafy..." value="bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi" spellcheck="false">
+  <button id="run">Measure</button>
+</div>
+<div class="row">
+  <label>Vantage label <input id="label" placeholder="e.g. home, Austin" size="16"></label>
+  <label>lat <input id="lat" size="7" placeholder="30.3"></label>
+  <label>lon <input id="lon" size="7" placeholder="-97.7"></label>
+  <button id="geo" type="button">Use my location</button>
+  <small>Rounded to 0.1 degree (~11 km). Self-reported: anyone merging your report trusts it.</small>
+</div>
+<details><summary>Settings</summary>
+  <div class="row">
+    <label>rounds <input id="rounds" type="number" value="5" min="1" max="20" size="3"></label>
+    <label>max excess ms <input id="excess" type="number" value="30" min="1" size="4"></label>
+    <label><input id="bitswap" type="checkbox" checked> probe bitswap-only peers via helia (loads from esm.sh)</label>
+  </div>
+</details>
+
+<div id="status" class="mut"></div>
+
+<div id="results" hidden>
+  <h2>Summary</h2>
+  <div class="cards" id="cards"></div>
+  <p id="near"></p>
+  <p id="sepnote" class="mut"></p>
+
+  <h2>Providers</h2>
+  <table>
+    <thead><tr><th>status</th><th>endpoint</th><th>IP / operator</th><th class="n">baseline ms</th><th class="n">excess ms</th><th class="n">verified</th><th class="n">≤ km away</th><th>seen from</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p><small>"≤ km away" is 100 km per ms of baseline round trip, an upper bound on the responder's distance from that vantage. One vantage can never prove two providers are apart; two vantages with non-overlapping disks can.</small></p>
+
+  <h2>Vantages</h2>
+  <ul id="vantages"></ul>
+  <p id="incons" class="invalid"></p>
+
+  <h2>Share and merge</h2>
+  <p>This link holds every report shown above. Send it to someone elsewhere; when they measure from it, their vantage is added and the separation proof updates.</p>
+  <input id="share" readonly>
+  <div class="row"><button id="copy">Copy link</button><button id="download">Download JSON</button></div>
+  <p>Or paste another report's link or JSON here:</p>
+  <textarea id="paste" placeholder="https://.../#r=... or [{...}]"></textarea>
+  <div class="row"><button id="mergebtn">Merge</button></div>
+</div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
