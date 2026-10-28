@@ -2,6 +2,8 @@
 
 Every protocol claim below cites a row in [sources-porep.md](sources-porep.md) (P), [sources-pdp.md](sources-pdp.md) (D), or [sources-ipfs-geo.md](sources-ipfs-geo.md) (G). Rows marked INFERRED are our reasoning from cited facts, not a quoted source. "Timed retrieval" is the method in this repo: IPNI/delegated-routing discovery, random-block challenges over the trustless gateway (or Bitswap), hash verification, baseline-vs-probe latency, and multi-vantage RTT disks.
 
+> Provenance: statements cited to P, D or G rows trace to the pinned sources in `research/sources-*.md`. Everything else here (engine behaviour, thresholds, sampling, scoring, clustering, the example numbers) is implementation-derived from `engine/` or INFERRED from the linked measurement reports, and is labelled evidence, not proof.
+
 ## 1. What each proof actually establishes
 
 | property | PoRep + WindowPoSt | PDP (FWSS) | timed retrieval (this repo) |
@@ -34,7 +36,7 @@ Every protocol claim below cites a row in [sources-porep.md](sources-porep.md) (
 | use case | what is needed | PoRep/PoSt gives | PDP gives | timed retrieval gives |
 |---|---|---|---|---|
 | **PDP marketing**: "your data is stored on N providers" | Evidence that N is N operators, not N provider IDs on one box | n/a (PDP data is not sealed) | N distinct provider IDs (D §5). Nothing about operators or sites (D §4, "approved/endorsed sets do not attest independence" is UNVERIFIED either way) | N endpoints that each served verified sampled blocks with latency consistent with local service, clustered by IP/ASN (INFERRED heuristics), and with two vantages, how many responders are provably apart. A number the sales page can cite with its method attached |
-| **IPFS archive reliability**: will this CID survive a provider outage? | Count of independent failure domains that hold a verified copy | n/a for plain IPFS content | n/a | Resilience score = largest set of pairwise proven-separate boxes (distinct IPs), with the ASN-level operator count as the fallback, never the raw IPNI provider count (which double-counts: one Peer ID per ContextID, G 2b) |
+| **IPFS archive reliability**: will this CID survive a provider outage? | Count of independent failure domains that hold a verified copy | n/a for plain IPFS content | n/a | Resilience score = largest set of pairwise proven-separate boxes (distinct IPs), zero until two located vantages exist; the ASN-level operator count is shown alongside as a separate heuristic, never the raw IPNI provider count (which double-counts: one Peer ID per ContextID, G 2b) |
 | **MSP placement checks**: did the secondary copy land somewhere else? | synapse uploads to 2 providers by default, secondaries pull from the primary (D §5). Curio has an SP-to-SP pull endpoint (D §7) | n/a | Distinct provider IDs only (D §5) | RTT disks from two vantages for each provider endpoint; disjoint disks prove separate sites. Same IP or ASN for both is INFERRED evidence of shared addressing or network, not proof of one owner |
 | **Dealbot-style integrity + retrievability** | Per-block hash verification, TTFB, from a known probe location | n/a | Dealbot already does IPNI lookup + `/ipfs` fetch + hash (D §6), from one location (`probe_location` unknown until dealbot#246, D §6) | The same check from any browser, so probe_location is the user's own, and the baseline-vs-probe excess adds a latency class (local vs on-demand) as evidence. INFERRED: dealbot's documented metrics are TTFB and last-byte (D §6); no baseline field appears in its events doc |
 

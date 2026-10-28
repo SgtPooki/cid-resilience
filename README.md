@@ -8,6 +8,9 @@ Paste a CID, get sampled retrieval evidence for how many independent copies of i
 
 ## What it measures
 
+> Provenance: statements cited to P, D or G rows trace to the pinned sources in `research/sources-*.md`. Everything else here (engine behaviour, thresholds, sampling, scoring, clustering, the example numbers) is implementation-derived from `engine/` or INFERRED from the linked measurement reports, and is labelled evidence, not proof.
+
+
 For one CID the app:
 
 1. **Discovers** providers from IPNI (`cid.contact`) and delegated routing (`delegated-ipfs.dev`), merged by Peer ID. Either source alone is enough; delegated routing sometimes drops its CORS header and is skipped when that happens.
