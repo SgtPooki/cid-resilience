@@ -78,7 +78,7 @@ function renderMerged() {
   const when = ts.length ? ` Measured ${new Date(Math.min(...ts)).toISOString().slice(0, 16)}Z${ts.length > 1 ? ` to ${new Date(Math.max(...ts)).toISOString().slice(0, 16)}Z` : ''}; a report only says what was true then.` : ''
   $('sepnote').textContent = (s.locatedVantages >= 2
     ? `${s.provenSeparate} responder location${s.provenSeparate === 1 ? '' : 's'} proven geographically apart (${s.operators} networks, ${s.boxes} boxes seen${s.capped ? '; only the first 20 boxes were searched, so this is a lower bound' : ''}). Geographic separation only: it says nothing about shared ownership or software. Vantage locations are self-reported.`
-    : `From one place every distance bound includes you, so nothing can be proven apart yet. Next step: copy the share link below, open it from another city (a friend, a phone on mobile data elsewhere, a server), and press Measure there. Until then, counting independent networks instead of copies gives ${s.operators}.`) + when
+    : `From one place every distance bound includes you, so nothing can be proven apart yet. Next step: copy the share link below, open it from another city (a friend, a phone on mobile data elsewhere, a server), and press Measure there. Until then, counting distinct networks (ASNs, an inferred operator heuristic) instead of copies gives ${s.operators}.`) + when
   // Separation certificate: name the pair, both disks, and the gap, so the proof is readable without the table.
   $('cert').innerHTML = s.provenSeparate >= 2 ? (() => {
     const sepBoxes = boxes.filter((c) => sepIds.has(c.key))
@@ -147,7 +147,7 @@ $('run').onclick = async () => {
       vantage: current, rounds: inputs.rounds, maxExcessMs: inputs.maxExcessMs, bitswapProbe,
       onEvent: (e) => {
         if (e.type === 'discovered') { total = e.endpoints + e.bitswapPeers; $('status').textContent = `${e.peers} providers claim to hold it (${e.endpoints} over HTTP, ${e.bitswapPeers} over bitswap only)${Object.keys(e.errors).length ? `; one index did not answer (${Object.keys(e.errors).join(', ')})` : ''}. Downloading a sample of the content...` }
-        if (e.type === 'dag') $('status').textContent = e.blocks ? `Got ${e.blocks} piece${e.blocks === 1 ? '' : 's'} of the content from ${e.from}. Now fetching random pieces from every provider and timing the answers; this takes a minute or two.${e.blocks < 3 ? ` This content has only ${e.blocks} piece${e.blocks === 1 ? '' : 's'}, so each provider gets ${e.blocks} test${e.blocks === 1 ? '' : 's'} and timing is marked weak.` : ''}` : 'No provider served the content, so nothing can be tested.'
+        if (e.type === 'dag') $('status').textContent = e.blocks ? `Got ${e.blocks} piece${e.blocks === 1 ? '' : 's'} of the content from ${e.from}. Now fetching random pieces from every provider and timing the answers; this takes a minute or two.${e.blocks < 3 ? ` This content has only ${e.blocks} piece${e.blocks === 1 ? '' : 's'}, so each provider gets at most ${e.blocks} test${e.blocks === 1 ? '' : 's'} and timing is marked weak.` : ''}` : 'No provider served the content, so nothing can be tested.'
         if (e.type === 'provider') { providers.set(e.provider.url ?? e.provider.peers[0], e.provider); if (running) renderLive() }
         if (e.type === 'annotated' && reports.includes(e.report)) { renderMerged(); saveState() }
       },
