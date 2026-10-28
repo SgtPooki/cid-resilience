@@ -5,6 +5,7 @@ import { protocolsFromMetadata, httpUrl, endpoints } from '../engine/discover.js
 import { challenge, median } from '../engine/probe.js'
 import { haversineKm, disjoint, separated, maxSeparatedSet, score, radiusKm, inconsistencies } from '../engine/score.js'
 import { merge, encodeReports, decodeReports } from '../engine/report.js'
+import { wantBlockMessage, parseResponse } from '../engine/bitswap.js'
 
 const uvarint = (n) => { const out = []; while (n >= 0x80) { out.push((n & 0x7f) | 0x80); n = Math.floor(n / 128) } out.push(n); return out }
 async function carFor(bodies) {
@@ -143,4 +144,23 @@ test('merge + fragment round trip', async () => {
   const frag = await encodeReports([r1, r2])
   assert.match(frag, /^[A-Za-z0-9_-]+$/)
   assert.deepEqual(await decodeReports(frag), [r1, r2])
+})
+
+test('bitswap want-block message encodes as length-prefixed protobuf', () => {
+  const cid = Uint8Array.of(1, 0x55, 0x12, 0x20, ...new Uint8Array(32).fill(9))
+  const m = wantBlockMessage(cid)
+  // outer length, Message.wantlist(0x0a), Wantlist.entries(0x0a), Entry.block(0x0a)
+  assert.equal(m[0], m.length - 1)
+  assert.deepEqual([...m.slice(1, 7)], [0x0a, 46, 0x0a, 44, 0x0a, 36])
+  assert.deepEqual([...m.slice(43)], [0x10, 1, 0x20, 0, 0x28, 1])
+})
+
+test('bitswap response parsing: payload blocks and DontHave presences', () => {
+  const data = Uint8Array.of(1, 2, 3), prefix = Uint8Array.of(1, 0x55, 0x12, 0x20), cid = new Uint8Array(36).fill(4)
+  const block = [0x0a, prefix.length, ...prefix, 0x12, data.length, ...data]
+  const presence = [0x0a, cid.length, ...cid, 0x10, 1]
+  const msg = Uint8Array.of(0x1a, block.length, ...block, 0x22, presence.length, ...presence, 0x28, 0)
+  const r = parseResponse(msg)
+  assert.deepEqual([...r.blocks[0]], [1, 2, 3])
+  assert.deepEqual([...r.dontHave[0]], [...cid])
 })
