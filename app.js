@@ -46,7 +46,7 @@ function row(p, obs) {
   const ob = obs.toSorted((a, b) => BEST.indexOf(st(a.status)) - BEST.indexOf(st(b.status)))[0] // best observation across vantages; per-vantage detail is in the last column
   const url = safeHttp(p.url)
   const where = url ? `<a href="${esc(url)}/ipfs/bafkqaaa" class="mono">${esc(url)}</a>` : `<span class="mono">${esc(p.peers?.[0])}</span> <span class="tag">bitswap</span>`
-  const op = [esc(p.ip), p.holder ? esc(`AS${p.asn} ${p.holder}`) : p.asn ? esc(`AS${p.asn}`) : ''].filter(Boolean).join('<br>') + (p.cdn ? ' <span class="tag">cdn</span>' : '') + (obs.some((o) => o.warmed) ? ' <span class="tag" title="served the sample CAR first, so its cache was warm before the challenge">warmed</span>' : '')
+  const op = [esc(p.ip), p.holder ? esc(`AS${p.asn} ${p.holder}`) : p.asn ? esc(`AS${p.asn}`) : ''].filter(Boolean).join('<br>') + (p.cdn ? ' <span class="tag">cdn</span>' : '') + (obs.some((o) => o.warmed) ? ' <span class="tag" title="served the sample CAR before being tested, so its cache may have been warm">warmed</span>' : '')
   const km = obs.filter((o) => o.status === 'local' && o.vantage?.lat != null).map((o) => `${fmt(radiusKm(o.baseline))}`).join(' / ')
   const seen = obs.map((o) => `<span class="${st(o.status)}">${esc(o.vantage?.label ?? '?')}: ${st(o.status)}${o.weak ? ' (weak timing)' : ''}${o.error ? ` (${esc(o.error)})` : ''}</span>`).join('<br>')
   const cell = ob.status === 'testing' ? `testing${p.progress ? ` ${p.progress[0]}/${p.progress[1]}` : ''}` : st(ob.status)
@@ -147,7 +147,7 @@ $('run').onclick = async () => {
       vantage: current, rounds: inputs.rounds, maxExcessMs: inputs.maxExcessMs, bitswapProbe,
       onEvent: (e) => {
         if (e.type === 'discovered') { total = e.endpoints + e.bitswapPeers; $('status').textContent = `${e.peers} providers claim to hold it (${e.endpoints} over HTTP, ${e.bitswapPeers} over bitswap only)${Object.keys(e.errors).length ? `; one index did not answer (${Object.keys(e.errors).join(', ')})` : ''}. Downloading a sample of the content...` }
-        if (e.type === 'dag') $('status').textContent = e.blocks ? `Got ${e.blocks} piece${e.blocks === 1 ? '' : 's'} of the content from ${e.from}. Now fetching random pieces from every provider and timing the answers; this takes a minute or two.${e.blocks < 3 ? ` This content has only ${e.blocks} piece${e.blocks === 1 ? '' : 's'}, so each provider gets at most ${e.blocks} test${e.blocks === 1 ? '' : 's'} and timing is marked weak.` : ''}` : 'No provider served the content, so nothing can be tested.'
+        if (e.type === 'dag') $('status').textContent = e.blocks ? `Got ${e.blocks} piece${e.blocks === 1 ? '' : 's'} of the content from ${e.from}. Now fetching random pieces from every provider and timing the answers; this takes a minute or two.${e.blocks < 3 ? ` The sample contains only ${e.blocks} block${e.blocks === 1 ? '' : 's'}, so each provider gets at most ${e.blocks} test${e.blocks === 1 ? '' : 's'} and timing is marked weak.` : ''}` : 'No provider served the content, so nothing can be tested.'
         if (e.type === 'provider') { providers.set(e.provider.url ?? e.provider.peers[0], e.provider); if (running) renderLive() }
         if (e.type === 'annotated' && reports.includes(e.report)) { renderMerged(); saveState() }
       },

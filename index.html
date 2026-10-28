@@ -40,14 +40,14 @@
   <ul class="gloss">
     <li><b>CID</b>: content identifier, the hash-based name of a file or folder on IPFS (the public peer-to-peer file network). Pasting one tells the page what to look for.</li>
     <li><b>provider</b>: a server that told the public index (IPNI) it holds the CID. "Advertised" means listed there; it says nothing about whether it really has the bytes.</li>
-    <li><b>local copy / on demand</b>: a provider that answered a random piece within 30 ms of how fast it answers an empty request is classed local; one that was 30 ms or more slower is classed on demand. These are latency classes, evidence rather than proof of where the bytes came from.</li>
+    <li><b>local copy / on demand</b>: a provider whose median extra delay for random pieces, over its empty-request baseline, is below the configured threshold (default 30 ms) is classed local; at or above it, on demand. These are latency classes, evidence rather than proof of where the bytes came from.</li>
     <li><b>vantage</b>: the place you measure from, i.e. this browser. Your label and coordinates are attached to your results so that results from different places can be merged.</li>
     <li><b>box / network</b>: providers sharing one IP address are counted as one box; providers in one network (an ASN, the number that identifies a hosting company's network) are counted as one operator. Both are inferred heuristics: one ASN hosts many tenants. Distance matters because nearby boxes are assumed to share failure risks.</li>
     <li><b>baseline / excess</b>: the baseline is how long the provider takes to answer an empty request (a "no-op"); excess is the median, over the test pairs, of how much longer a real piece took. Large excess means slower service; whether that is a relay, a slow disk or scheduling is not proven.</li>
     <li><b>weak timing</b>: fewer than 3 test pairs completed (small content, or fewer pieces chosen in Settings) or the excess came out below -50 ms, which means noise swamped the signal; treat local/on-demand as a hint, not a verdict. <b>warmed</b>: that provider served the sample first, so its cache was already warm when tested.</li>
     <li><b>self-reported</b>: the label and coordinates attached to a result are whatever the person who measured typed in; nothing checks them.</li>
-    <li><b>proven apart</b>: light in fibre travels about 102 km per millisecond of round trip, so each measured delay bounds how far a responder can be from you, assuming no faster-than-fibre links. Two responders whose bounds from two different places cannot overlap are proven to sit in different locations; what sits behind each responder is not proven.</li>
-    <li><b>CDN</b>: a content delivery network edge that caches whatever was recently requested; fast, but not durable storage.</li>
+    <li><b>proven apart</b>: light in fibre travels about 102 km per millisecond of round trip, so each measured delay bounds how far a responder can be from you, assuming nothing on the path carries signals faster than that (derived from sources G 10a/10b; the disk argument follows G 9d). Two responders whose bounds from two different places cannot overlap are proven to sit in different locations; what sits behind each responder is not proven.</li>
+    <li><b>CDN</b>: a content delivery network edge that caches whatever was recently requested. The score leaves CDN edges out of the durable count by policy, since a cache can drop content at any time.</li>
   </ul>
 </details>
 <details><summary>What leaves your browser, and what it costs</summary>
